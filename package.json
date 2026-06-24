@@ -1,0 +1,46 @@
+{
+  "name": "exargen-command-center",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "shared",
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev:backend": "npm run dev --workspace=backend",
+    "dev:frontend": "npm run dev --workspace=frontend",
+    "build": "npm run build --workspaces",
+    "build:shared": "npm run build --workspace=shared",
+    "build:backend": "npm run build --workspace=backend",
+    "build:frontend": "npm run build --workspace=frontend",
+    "typecheck": "npm run typecheck --workspace=backend && npm run typecheck --workspace=frontend",
+    "lint": "eslint .",
+    "lint:strict": "eslint . --max-warnings 0",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "dead-code": "ts-prune -p tsconfig.base.json",
+    "audit:strict": "npm audit --production --audit-level=high",
+    "test": "npm run test:unit",
+    "test:unit": "npm run test --workspace=backend && npm run test --workspace=frontend",
+    "test:unit:coverage": "npm run test:coverage --workspace=backend && npm run test:coverage --workspace=frontend",
+    "test:e2e": "npm run test:e2e --workspace=frontend",
+    "test:all": "npm run typecheck && npm run lint && npm run test:unit && npm run test:e2e"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "eslint": "^9.39.4",
+    "eslint-plugin-no-secrets": "^2.3.3",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-security": "^3.0.1",
+    "globals": "^15.15.0",
+    "prettier": "^3.8.3",
+    "ts-prune": "^0.10.3",
+    "typescript-eslint": "^8.59.3"
+  }
+}

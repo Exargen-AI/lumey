@@ -1,0 +1,270 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# Cancel any in-flight run for the same branch when a new commit lands.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Phases 0 + 1 of the baseline hardening plan: a separate CI workflow
+# alongside the existing e2e.yml so the cheap checks (lint, typecheck,
+# unit, coverage, audit) run on every PR without waiting for Playwright.
+# Subsequent phases add their own job here:
+#   • Phase 1.5 → strict lint (`--max-warnings 0`) once the 663 existing
+#                 warnings are paid down + strict TS flags
+#                 (noUncheckedIndexedAccess, exactOptionalPropertyTypes).
+#   • Phase 2 → coverage threshold ratchet (currently 0%).
+#   • Phase 3 → integration job once `createApp()` / `bootstrap()` split lands.
+#   • Phase 6 → bundle-size + Lighthouse jobs.
+#   • Phase 7 → Semgrep + secret scanning + Snyk jobs.
+# Each job is independent — failures in one don't cancel the others.
+
+jobs:
+  # ─── Secret scanning ───────────────────────────────────────────────────
+  # 2026-06-01 enterprise hardening — gitleaks scans the full git history
+  # for committed secrets: API keys, tokens, private keys, connection
+  # strings. The repo is currently clean; this gate keeps it that way.
+  # Fails the build on any finding.
+  #
+  # We run the gitleaks BINARY directly (MIT-licensed, free) rather than the
+  # `gitleaks/gitleaks-action@v2` wrapper, which now requires a paid
+  # GITLEAKS_LICENSE secret for GitHub *organization* accounts. The binary
+  # has no such restriction.
+  secret-scan:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install gitleaks
+        run: |
+          GITLEAKS_VERSION=8.18.4
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" -o gitleaks.tar.gz
+          tar -xzf gitleaks.tar.gz gitleaks
+          sudo mv gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+      - name: Scan git history for secrets
+        run: gitleaks detect --source . --config .gitleaks.toml --redact --no-banner --verbose
+
+  # ─── ESLint ────────────────────────────────────────────────────────────
+  # Phase 1: TypeScript-aware ESLint with security + react-hooks +
+  # no-secrets plugins. Errors fail the build; warnings are surfaced for
+  # visibility but don't block (Phase 1.5 flips this to `--max-warnings 0`
+  # after the existing 663 warnings are paid down).
+  lint:
+    name: ESLint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build:shared
+      - run: npm run lint
+
+  # ─── Prettier formatting check ─────────────────────────────────────────
+  # Phase 1.1 will run `prettier --write` across the whole tree in a
+  # dedicated PR (avoids drowning this Phase 1 PR in formatting noise).
+  # Until then this job is disabled — uncomment to enable, but expect
+  # a large diff before it goes green for the first time.
+  #
+  # format:
+  #   name: Prettier check
+  #   runs-on: ubuntu-latest
+  #   timeout-minutes: 3
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: actions/setup-node@v4
+  #       with: { node-version: '20', cache: 'npm' }
+  #     - run: npm ci
+  #     - run: npm run format:check
+
+  # ─── Dependency audit ──────────────────────────────────────────────────
+  # Phase 1: fail the build if any high/critical vuln lands in production
+  # deps. Excludes devDependencies so the lint stack's own occasional
+  # advisories don't fail releases.
+  audit:
+    name: npm audit (production deps)
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run audit:strict
+
+  # ─── Typecheck ─────────────────────────────────────────────────────────
+  typecheck:
+    name: Typecheck (both packages)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build:shared
+      - run: npx prisma generate --schema=backend/prisma/schema.prisma
+      - run: npm run typecheck
+
+  # ─── Unit + component tests ────────────────────────────────────────────
+  # Backend Vitest (services, utils, validators) + frontend Vitest (hooks,
+  # components, lib). No DB needed yet — Phase 3 adds the integration job
+  # which spins up Postgres for supertest.
+  unit:
+    name: Unit + component tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build:shared
+      - run: npx prisma generate --schema=backend/prisma/schema.prisma
+      - name: Run unit tests with coverage
+        run: npm run test:unit:coverage
+      - name: Upload backend coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: backend/coverage
+          retention-days: 14
+      - name: Upload frontend coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: frontend/coverage
+          retention-days: 14
+
+  # ─── Build verification ────────────────────────────────────────────────
+  # If `npm run build` fails for either workspace, no point shipping. This
+  # also produces the artifacts that a later Phase 6 bundle-size job will
+  # consume.
+  build:
+    name: Build (both packages)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build
+
+  # ─── Production Docker image build (Railway parity) ────────────────────
+  # The `build` job above uses `npm ci`, which installs ALL workspaces and
+  # hoists shared deps into the root node_modules — so a backend file that
+  # imports a package declared only in frontend/ (or windows-agent/) still
+  # compiles. Railway's deploy uses backend/Dockerfile, which copies and
+  # installs ONLY the backend + shared workspaces, so that hoist never
+  # happens.
+  #
+  # That divergence let PR #165 ship a backend `import axios` while axios was
+  # missing from backend/package.json: every `npm ci`-based job stayed green
+  # while every Railway deploy silently failed at `tsc` (TS2307: Cannot find
+  # module 'axios'), freezing production on a 4-day-old image. Nothing in CI
+  # noticed because nothing in CI built the way Railway does.
+  #
+  # This job reproduces the exact Railway build (`docker build -f
+  # backend/Dockerfile .` from the repo root) so a backend image that can't
+  # build fails the PR loudly instead of silently freezing prod.
+  docker-build:
+    name: Docker image (Railway parity)
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build backend production image (same as Railway)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: backend/Dockerfile
+          push: false
+          tags: cc-backend-ci:pr
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ─── Real-DB integration tests (Phase 3) ───────────────────────────────
+  # Runs the *.real.test.ts suite against a fresh Postgres service
+  # container. Catches the class of bugs the prismaMock unit suite cannot:
+  #   - SQL constraint behavior (cascade deletes, unique-index case)
+  #   - Migration correctness (PR #134 shipped a `"User"` vs `"users"`
+  #     typo that only Playwright caught — this job would have surfaced
+  #     it sooner)
+  #   - Real timestamp arithmetic (lockout expiry, nudge cooldown)
+  # The suite is small + fast (~30s) and runs independently of the
+  # unit-tests / playwright jobs.
+  integration-real-db:
+    name: Integration tests (real Postgres)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: exargen_cc_test
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      # Harness reads DATABASE_URL_TEST first. We ALSO set DATABASE_URL +
+      # JWT secrets because the service modules under test import
+      # `config/env`, which validates them at module-load time and calls
+      # `process.exit(1)` if any are missing. Same pattern e2e.yml uses.
+      # The DATABASE_URL value is identical to the TEST one so a stray
+      # `prisma`-driven write in a service goes to the test DB, not a
+      # phantom dev DB.
+      DATABASE_URL_TEST: postgresql://postgres:postgres@localhost:5433/exargen_cc_test
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5433/exargen_cc_test
+      JWT_ACCESS_SECRET: ci-access-secret-32-chars-min-not-used-in-prod-xxxxxxxxxxxxx
+      JWT_REFRESH_SECRET: ci-refresh-secret-32-chars-min-not-used-in-prod-xxxxxxxxxxxxxx
+      JWT_ACCESS_EXPIRY: 15m
+      JWT_REFRESH_EXPIRY: 7d
+      NODE_ENV: test
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build:shared
+      - name: Generate Prisma client
+        working-directory: backend
+        run: npx prisma generate
+      - name: Run real-DB suite
+        working-directory: backend
+        run: npm run test:real-db

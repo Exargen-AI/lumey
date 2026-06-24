@@ -1,0 +1,39 @@
+# Throwaway Postgres for the real-DB integration test suite.
+#
+# Why a separate file (and not just `docker-compose.yml`):
+#   We don't want `up -d` against the main dev DB to also boot this
+#   container. Engineers running the unit suite locally should NOT need
+#   Docker at all — that's reserved for the real-DB tests.
+#
+# Why port 5433 (not 5432):
+#   Most engineers run the dev DB on 5432. Picking 5433 lets you run
+#   `docker compose -f docker-compose.test.yml up -d` alongside your
+#   normal dev DB without a port clash.
+#
+# Usage from the repo root:
+#   docker compose -f docker-compose.test.yml up -d        # boot
+#   npm run test:real-db --workspace=backend               # run suite
+#   docker compose -f docker-compose.test.yml down -v      # tear down
+#
+# In CI we use a service container (see .github/workflows/ci.yml) — this
+# file is for local dev convenience only.
+
+services:
+  test-postgres:
+    image: postgres:15-alpine
+    container_name: exargen-test-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: exargen_cc_test
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d exargen_cc_test"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    # tmpfs so the data dir lives in RAM — tests run faster + nothing
+    # persists between `down -v` cycles by design.
+    tmpfs:
+      - /var/lib/postgresql/data

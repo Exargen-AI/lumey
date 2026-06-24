@@ -1,0 +1,27 @@
+# gitleaks configuration (2026-06-01 enterprise hardening).
+#
+# Extends the built-in default ruleset and adds a narrow allowlist for
+# files that legitimately contain FABRICATED credentials by design —
+# unit/component test fixtures. Real source, config, seed data, and
+# `.env.example` files are still fully scanned.
+#
+# Tradeoff: a real secret hidden inside a `*.test.ts` file would not be
+# caught. That's the accepted, industry-standard cost of keeping the gate
+# free of test-fixture false positives (e.g. a hardcoded `const KEY = '…'`
+# in idempotency.service.test.ts trips the generic-api-key rule). Secrets
+# belong in env vars, never in source — including tests — and code review
+# remains the backstop for test files.
+
+title = "Command Center gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Test fixtures contain fake credentials by design"
+paths = [
+  '''.*\.test\.ts''',
+  '''.*\.test\.tsx''',
+  '''.*\.spec\.ts''',
+  '''.*\.spec\.tsx''',
+]

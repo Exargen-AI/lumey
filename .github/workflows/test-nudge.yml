@@ -1,0 +1,129 @@
+# 2026-05-23 — PR-time "did you ship a test?" nudge.
+#
+# Surfaces a comment on any PR that touches the mutating surfaces (hooks,
+# kanban components, mutating services) without touching any test file.
+# It DOES NOT fail the build — sometimes a refactor genuinely needs no
+# new tests. But it makes the absence visible to the reviewer + author
+# instead of silent.
+#
+# Surfaces watched:
+#   - frontend/src/hooks/**          (mutation hooks live here)
+#   - frontend/src/components/kanban/**
+#   - frontend/src/components/tasks/**
+#   - frontend/src/components/onboarding/**
+#   - frontend/src/components/auth/**
+#   - frontend/src/lib/**            (pure helpers)
+#   - backend/src/services/**
+#   - backend/src/middleware/**
+#   - backend/src/handlers/**
+#
+# Test files looked for:
+#   - **/*.test.ts, **/*.test.tsx, **/*.spec.ts, **/*.spec.tsx
+#   - tests/e2e/*.spec.ts
+#
+# Exit code is always 0. The comment is the signal.
+
+name: Test nudge
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  nudge:
+    name: Surface untested behaviour change
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute diff stats
+        id: diff
+        run: |
+          # Files changed in this PR vs main.
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+
+          # All files touched by this PR.
+          ALL=$(git diff --name-only "$BASE_SHA"..."$HEAD_SHA")
+
+          # Did we touch any test file?
+          TESTS_TOUCHED=$(echo "$ALL" | grep -E '\.(test|spec)\.(ts|tsx)$|tests/e2e/.*\.spec\.ts$' || true)
+
+          # Did we touch any watched mutating surface?
+          MUTATIONS_TOUCHED=$(echo "$ALL" | grep -E \
+            '^(frontend/src/(hooks|components/(kanban|tasks|onboarding|auth))|backend/src/(services|middleware|handlers))/' || true)
+          # Exclude the test files themselves from the mutations list (a
+          # PR that only touches *.test.ts inside a watched dir is a
+          # pure test-add — no nudge needed).
+          if [ -n "$MUTATIONS_TOUCHED" ]; then
+            MUTATIONS_TOUCHED=$(echo "$MUTATIONS_TOUCHED" | grep -v -E '\.(test|spec)\.(ts|tsx)$' || true)
+          fi
+
+          {
+            echo "mutations<<EOF"
+            echo "$MUTATIONS_TOUCHED"
+            echo "EOF"
+            echo "tests_count=$(echo "$TESTS_TOUCHED" | grep -c . || true)"
+            echo "mutations_count=$(echo "$MUTATIONS_TOUCHED" | grep -c . || true)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Comment on PR when behaviour changed but no test changed
+        if: steps.diff.outputs.mutations_count != '0' && steps.diff.outputs.tests_count == '0'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const mutations = `${{ steps.diff.outputs.mutations }}`.trim().split('\n').filter(Boolean);
+            const body = [
+              '### ⚠️ Behaviour changed but no test changed',
+              '',
+              'This PR touches code in a watched directory (hooks, kanban / tasks / onboarding / auth components, services, middleware, handlers) but does **not** touch any `*.test.*` or e2e spec file.',
+              '',
+              '**Files that changed without test coverage:**',
+              '',
+              ...mutations.slice(0, 30).map((f) => `- \`${f}\``),
+              mutations.length > 30 ? `\n…and ${mutations.length - 30} more` : '',
+              '',
+              "This isn't a blocker — sometimes a refactor genuinely needs no new tests, or the change is purely cosmetic. But the FE has had a pattern of UX regressions slipping through (PR #147 silent-rollback, PR #143 dense overflow). When you ship behaviour change without a test, please call it out in the PR description so the reviewer can confirm it was intentional.",
+              '',
+              '_Disable for a single PR by adding `[skip-test-nudge]` to the PR title._',
+              '_See `docs/audits/2026-05-23-fe-test-coverage-audit.md` for the testing campaign roadmap._',
+            ].join('\n');
+
+            // Skip if author opted out via title flag.
+            if (context.payload.pull_request.title.includes('[skip-test-nudge]')) {
+              core.info('PR title includes [skip-test-nudge] — not commenting.');
+              return;
+            }
+
+            // Update the existing nudge comment in place if there is one
+            // (so a force-push doesn't pile up duplicate comments).
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              per_page: 100,
+            });
+            const marker = '<!-- exargen-test-nudge -->';
+            const taggedBody = `${marker}\n${body}`;
+            const existing = comments.find((c) => c.body && c.body.startsWith(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: taggedBody,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                body: taggedBody,
+              });
+            }

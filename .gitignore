@@ -1,0 +1,33 @@
+node_modules/
+dist/
+build/
+*.log
+.DS_Store
+coverage/
+.turbo/
+.vite/
+*.tsbuildinfo
+
+# Environment files. Allow only the tracked `.env.example` files.
+# QA H-M2: previously only `.env` and `.env.local` were excluded — a
+# user creating `.env.production` for staging dry-runs would NOT have
+# it gitignored.
+.env
+.env.local
+.env.*
+!.env.example
+!.env.*.example
+
+# Secrets / certs / keys — never commit these.
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+secrets/
+
+# Playwright
+test-results/
+playwright-report/
+playwright/.cache/
+.gstack/

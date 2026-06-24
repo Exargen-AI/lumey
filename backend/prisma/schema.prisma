@@ -1,0 +1,2756 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── ENUMS ───
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  PRODUCT_MANAGER
+  ENGINEER
+  CLIENT
+  TESTING
+}
+
+// Orthogonal axis to UserRole. Most policy lives on `role`; `userType`
+// captures the "is this caller a human or an autonomous agent?" question
+// for the small set of policies where the distinction matters (e.g.,
+// agents cannot transition tasks to Done — that's reserved for human
+// review). Default is HUMAN; agents are explicitly minted by Super Admin.
+//
+// History: this enum + the 6 agent_* columns on User were added by
+// migration 20260509000000_agent_users (PR #63, Slice 1) and then
+// accidentally dropped from schema.prisma by a later merge. The DB still
+// has the columns; this restores the schema-side source of truth.
+enum UserType {
+  HUMAN
+  AGENT
+}
+
+enum ProjectCategory {
+  FLAGSHIP
+  PLATFORM
+  B2C_SMB
+  PASSION
+  CONSULTING
+  SOCIAL_IMPACT
+}
+
+enum ProjectPhase {
+  IDEA
+  ARCHITECTURE
+  DEVELOPMENT
+  TESTING
+  LIVE
+  MAINTENANCE
+}
+
+enum HealthStatus {
+  GREEN
+  YELLOW
+  RED
+}
+
+enum TaskStatus {
+  BACKLOG
+  TODO
+  IN_PROGRESS
+  IN_REVIEW
+  DONE
+}
+
+enum TaskPriority {
+  P0
+  P1
+  P2
+  P3
+}
+
+enum MilestoneStatus {
+  UPCOMING
+  COMPLETED
+  MISSED
+}
+
+enum TaskType {
+  FEATURE
+  BUG
+  CHORE
+  SPIKE
+}
+
+enum SprintStatus {
+  PLANNING
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum EpicStatus {
+  OPEN
+  IN_PROGRESS
+  DONE
+}
+
+enum DecisionStatus {
+  PROPOSED
+  ACCEPTED
+  SUPERSEDED
+}
+
+enum DeliverableStatus {
+  PENDING
+  IN_PROGRESS
+  DELIVERED
+  SIGNED_OFF
+  REJECTED
+}
+
+// ─── Project Documents (S3-backed) ───
+
+// What kind of reference material this document is. Drives category
+// filters in the UI and helps the agent decide which doc to fetch when
+// it sees the knowledge-pack listing. Adding a new value is additive —
+// existing docs default to OTHER on a tag-less upload, and the FE renders
+// "Other" as a fallback. Keep the set small; if it grows past ~10 we'll
+// switch to a free-form tag.
+enum DocCategory {
+  SPEC
+  DESIGN
+  CONTRACT
+  REFERENCE
+  RUNBOOK
+  SECURITY
+  OTHER
+}
+
+// PENDING — DB row created via presigned-upload but the client hasn't
+// confirmed the S3 PUT completed. Filtered out of list endpoints until
+// confirmed. Cleaned up by a daily cron if older than 24h.
+//
+// READY — uploaded + confirmed, listable.
+//
+// DELETED — soft-deleted. The S3 object is removed asynchronously
+// (Phase 2 of the docs feature adds the cleanup worker); the row stays
+// for audit. Filtered out of every endpoint except the admin audit view.
+enum DocStatus {
+  PENDING
+  READY
+  DELETED
+}
+
+// ─── Compliance / Onboarding course enums ───
+
+enum CourseStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum QuestionType {
+  MULTIPLE_CHOICE
+  TRUE_FALSE
+  SCENARIO
+}
+
+// ─── MODELS ───
+
+model User {
+  id                   String    @id @default(uuid())
+  name                 String
+  email                String    @unique
+  passwordHash         String
+  role                 UserRole  @default(ENGINEER)
+  company              String?
+  // S3 object key of the user's uploaded profile photo (2026-06). NULL until
+  // they upload one. We store the KEY, not a URL — the bucket is private, so
+  // the API hands the client a fresh presigned GET URL (`avatarUrl`) on each
+  // auth response. The key never leaves the server.
+  avatarKey            String?
+  isActive             Boolean   @default(true)
+  isSeedData           Boolean   @default(false)
+  lastLoginAt          DateTime?
+  // Bumped on logout-everywhere, password change, role change. Embedded in
+  // every issued JWT so a stolen token is invalidated server-side without
+  // waiting for natural expiry.
+  tokenVersion         Int       @default(0)
+  // Per-account brute-force lockout. failedLoginCount resets on success or
+  // when lockedUntil elapses; lockedUntil short-circuits bcrypt in login().
+  failedLoginCount     Int       @default(0)
+  lockedUntil          DateTime?
+  // ─── Agent visibility allowlist (2026-06-01) ───
+  // AI agents (userType = AGENT) and everything they touch — tasks
+  // assigned to them, their comments, their activity-feed entries — are
+  // hidden from regular users. They're visible only to SUPER_ADMIN
+  // (implicitly) and to users with this flag set. SUPER_ADMIN manages
+  // the allowlist via a multi-select; only SUPER_ADMIN can flip this
+  // field (enforced in `userService.updateUser`). Default false so no
+  // one outside SUPER_ADMIN sees agents until explicitly granted.
+  // Inert on SUPER_ADMIN rows (they always see agents).
+  canViewAgents        Boolean   @default(false)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  projectMemberships      ProjectMember[]
+  assignedTasks           Task[]                   @relation("TaskAssignee")
+  createdTasks            Task[]                   @relation("TaskCreator")
+  // Tasks currently waiting on this user to review (set by the explicit
+  // "Request review" action; cleared on the review decision).
+  reviewingTasks          Task[]                   @relation("TaskReviewer")
+  requestedReviews        Task[]                   @relation("TaskReviewRequester")
+  comments                Comment[]
+  decisions               Decision[]
+  statusUpdates           StatusUpdate[]
+  activities              Activity[]
+  dailyUpdates            DailyUpdate[]
+  statusChanges           TaskStatusHistory[]
+  notifications           Notification[]
+  timeEntries             TimeEntry[]
+  submittedTimesheets     TimesheetWeek[]          @relation("TimesheetSubmitter")
+  approvedTimesheets      TimesheetWeek[]          @relation("TimesheetApprover")
+  cmsBlogs                CmsBlog[]
+  projectAcknowledgments  ProjectAcknowledgment[]
+  signedOffDeliverables   Deliverable[]            @relation("DeliverableSignedOff")
+  createdTaskLinks        TaskLink[]
+  refreshTokens           RefreshToken[]
+  leaveRequests           LeaveRequest[]           @relation("LeaveApplicant")
+  decidedLeaves           LeaveRequest[]           @relation("LeaveApprover")
+  contentEngineSearches   ContentEngineSearch[]    @relation("ContentEngineSearchCreator")
+  generatedBlogDrafts     GeneratedBlogDraft[]     @relation("GeneratedBlogDraftCreator")
+  uploadedDocuments       ProjectDocument[]        @relation("ProjectDocumentUploader")
+  taskSubscriptions       TaskSubscription[]
+  sentNudges              TaskNudge[]              @relation("TaskNudgeSender")
+  notificationPreferences NotificationPreference[]
+  // 2026-05-23 Layer 2 / agent control plane. Cascade-delete on user
+  // deletion so stale dedup rows can't outlive their owner.
+  idempotencyKeys         IdempotencyKey[]
+
+  // ─── Pulse module (2026-05-28) ───
+  // SUPER_ADMIN-only Employee Productivity Tracker + Device Health. A
+  // user may own multiple devices (work laptop + dev box). SUPER_ADMINs
+  // are the only ones who issue/revoke enrollment tokens and resolve
+  // device risk alerts — these relations stay null on non-admin rows.
+  // Devices use ON DELETE SET NULL on the ownership side so deleting the
+  // owning user doesn't drop the telemetry record (the device may be
+  // reassigned).
+  ownedDevices             Device[]                @relation("DeviceOwner")
+  revokedDevices           Device[]                @relation("DeviceRevoker")
+  issuedEnrollmentTokens   DeviceEnrollmentToken[] @relation("EnrollmentTokenIssuer")
+  assignedEnrollmentTokens DeviceEnrollmentToken[] @relation("EnrollmentTokenAssignee")
+  resolvedDeviceRiskAlerts DeviceRiskAlert[]       @relation("AlertResolver")
+  clockSessions            ClockSession[]          @relation("ClockSessionUser")
+
+  // ─── Composite productivity score (2026-05-29, PR #33 R5) ───
+  // Multi-signal score: STANDUP + EXECUTION + CODE + COMMUNICATION +
+  // PRESENCE + DEEP_WORK + DEVICE_HYGIENE. Universal weights — every
+  // employee scored against the same formula. See
+  // docs/pulse/04-productivity-scoring.md.
+  productivityEvents ProductivityEvent[]         @relation("ProductivityEventUser")
+  productivityScores EmployeeProductivityScore[] @relation("EmployeeProductivityScoreUser")
+  authoredWeightSets UniversalWeightSet[]        @relation("UniversalWeightSetUpdater")
+  employeeProfile    EmployeeProfile?            @relation("EmployeeProfileUser")
+
+  // GitHub login for the CODE signal (Wave 3, PR #33). When set, the
+  // Pulse GitHub webhook can map an actor's login to a user record
+  // and emit CODE productivity events on commits / PRs / reviews.
+  // Stored lowercased + unique so a typo'd casing doesn't multi-credit
+  // one human. Null until SUPER_ADMIN populates it.
+  githubLogin String? @unique
+
+  // DevelopmentOps relations
+  createdRepositories Repository[]
+  deploymentsCreated  Deployment[]
+  createdReleases     Release[]
+
+  // Compliance / onboarding course
+  onboardingRequired    Boolean      @default(true)
+  onboardingCompletedAt DateTime?
+  enrollments           Enrollment[]
+
+  // Full legal name as used on signed compliance documents. Distinct from
+  // `name` (display name, often a first-name shorthand derived from the
+  // email at lazy-create). Captured ONCE before the user signs their first
+  // document; immutable from the user side thereafter (admin can edit).
+  // Null means the user hasn't gone through the legal-name capture step
+  // yet — the OnboardingGate forces it before any signature is allowed.
+  legalName String?
+
+  // ─── Agent platform ───
+  // For HUMAN users (the vast majority) all agent-* fields stay null/default.
+  // For AGENT users (e.g. Manjari): role still drives RBAC; agentRole is a
+  // free-text label ("autonomous-engineer", "autonomous-pm", ...) that
+  // appears in admin UI but has no permission consequence.
+  // agentSystemPromptPath records where the agent's CLAUDE.md / skills
+  // live on the host filesystem (informational only — Command Center
+  // does not read it). Budget fields let the runtime enforce a per-agent
+  // monthly cost ceiling.
+  //
+  // Ships with migration 20260509000000_agent_users (PR #63). These
+  // schema lines were accidentally dropped by a later merge; this
+  // restores the source-of-truth without changing the DB shape.
+  userType                   UserType @default(HUMAN)
+  agentRole                  String?
+  agentSystemPromptPath      String?
+  agentBudgetMonthlyUsdCents Int?
+  agentBudgetUsedUsdCents    Int      @default(0)
+  agentActive                Boolean  @default(true)
+
+  @@map("users")
+}
+
+// Server-side refresh-token state. Each successful login mints one row; each
+// /auth/refresh rotates it (mark old.revokedAt, create a new row whose
+// `replacedById` chains back). Reuse of a revoked token triggers a chain-wide
+// revoke — a strong signal that the token was stolen.
+model RefreshToken {
+  id           String    @id @default(uuid())
+  userId       String
+  // Revoked tokens are kept (not deleted) so reuse detection can flag them.
+  revokedAt    DateTime?
+  replacedById String?   @unique
+  expiresAt    DateTime
+  // Forensic context. Useful for "list active sessions" later, and for
+  // identifying odd traffic patterns when a chain is compromised.
+  userAgent    String?
+  ip           String?
+  createdAt    DateTime  @default(now())
+
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  replacedBy     RefreshToken?  @relation("TokenChain", fields: [replacedById], references: [id])
+  replacedTokens RefreshToken[] @relation("TokenChain")
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+// ─── Leave tracking ────────────────────────────────────────────────────────
+//
+// Pankaj (the founder, sole SUPER_ADMIN by intent) is the only approver for
+// leave requests in v1 — every action that flips a request to APPROVED or
+// REJECTED is gated on `role: SUPER_ADMIN` in the service layer. The schema
+// itself is approver-agnostic so a future "delegated approvers" feature can
+// land without a migration.
+//
+// Quota / accrual / carry-over are deliberately out of scope for v1 —
+// company policies are still being authored. Once they're settled, a
+// LeaveBalance model can be added per (user, leaveType, year) and applyLeave
+// can deduct from it inside the existing transaction.
+
+enum LeaveType {
+  CASUAL
+  SICK
+  EARNED
+  UNPAID
+  BEREAVEMENT
+  OTHER
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+model LeaveRequest {
+  id           String      @id @default(uuid())
+  applicantId  String
+  // Inclusive on both ends. We store DateTime stamped at midnight UTC of the
+  // calendar day; the FE strips time and renders "Mar 4 – Mar 6". Half-day
+  // support is a future extension; today every leave is whole-day.
+  startDate    DateTime
+  endDate      DateTime
+  // Pre-computed at apply time so listing pages don't re-derive it. Counts
+  // calendar days (start through end inclusive); weekends are NOT excluded
+  // here because Exargen's working week may differ from the canonical
+  // Mon-Fri (the policy doc will spell out the holiday calendar later).
+  totalDays    Int
+  leaveType    LeaveType   @default(CASUAL)
+  reason       String?     @db.Text
+  status       LeaveStatus @default(PENDING)
+  // Filled when the request transitions out of PENDING. The decision row
+  // for an APPROVED + later CANCELLED-by-applicant flow keeps the original
+  // approver attribution — cancellations don't pretend nobody approved.
+  decidedById  String?
+  decidedAt    DateTime?
+  // Free-text from the approver — typically empty on approve, an
+  // explanation on reject ("please re-apply with the right dates").
+  decisionNote String?     @db.Text
+  // Set when the applicant withdraws their own request before/after a
+  // decision. Distinct from REJECTED so the activity feed reads honestly.
+  cancelledAt  DateTime?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  applicant User  @relation("LeaveApplicant", fields: [applicantId], references: [id], onDelete: Cascade)
+  decidedBy User? @relation("LeaveApprover", fields: [decidedById], references: [id])
+
+  // Most queries hit one of these axes:
+  //   - applicant lookups for "my leave history"
+  //   - status lookups for the approver queue (PENDING) and timesheet
+  //     overlay (APPROVED with date overlap)
+  @@index([applicantId, status])
+  @@index([status, startDate])
+  @@map("leave_requests")
+}
+
+model Project {
+  id                String          @id @default(uuid())
+  name              String
+  slug              String          @unique
+  description       String?         @db.Text
+  clientDescription String?         @db.Text
+  category          ProjectCategory
+  phase             ProjectPhase    @default(IDEA)
+  healthStatus      HealthStatus    @default(GREEN)
+  autoHealth        Boolean         @default(true)
+  tags              String[]
+  startDate         DateTime?
+  targetDate        DateTime?
+  taskCounter       Int             @default(0)
+  isSeedData        Boolean         @default(false)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  members                ProjectMember[]
+  tasks                  Task[]
+  sprints                Sprint[]
+  epics                  Epic[]
+  milestones             Milestone[]
+  decisions              Decision[]
+  deliverables           Deliverable[]
+  comments               Comment[]
+  statusUpdates          StatusUpdate[]
+  activities             Activity[]
+  timeEntries            TimeEntry[]
+  acknowledgments        ProjectAcknowledgment[]
+  customFieldDefinitions CustomFieldDefinition[]
+  githubIntegration      ProjectGitHubIntegration?
+  documents              ProjectDocument[]
+  products               Product[]
+
+  // DevelopmentOps relations
+  repositories         Repository[]
+  repositoryActivities RepositoryActivity[]
+  environments         Environment[]
+  deployments          Deployment[]
+
+  @@map("projects")
+}
+
+// ─── Product (PR C feature #6) ───
+//
+// A discrete shipping unit inside a Project. The motivating use case:
+// project "Acme Platform" can carry Products like "Customer Web App",
+// "Admin Console", "Mobile App". Tasks optionally belong to a Product
+// (the productId on Task is nullable — project-level setup tasks
+// legitimately have no product).
+//
+// Why an additive model rather than overloading Epic:
+//   - Products are LONG-LIVED. Epics are sprint-scoped slices of work
+//     inside a product.
+//   - Products are visible to clients (the team explicitly shows the
+//     client "here are the things we're shipping for you"); epics are
+//     internal sprint vocabulary.
+//   - Clients can submit bugs scoped to a Product without us having
+//     to expose the entire epic taxonomy.
+//
+// Slug is per-project unique (not globally) so two unrelated projects
+// can each have a "mobile" product without colliding.
+model Product {
+  id          String        @id @default(uuid())
+  projectId   String
+  name        String
+  // URL-safe identifier — used for /projects/:id/products/:slug.
+  // Project-scoped unique so "mobile" can co-exist across projects.
+  slug        String
+  description String?       @db.Text
+  status      ProductStatus @default(ACTIVE)
+  // Admin-controlled display order. The list view sorts by this then
+  // name so a freshly-renamed product doesn't visually re-shuffle.
+  order       Int           @default(0)
+  // Optional visual cues. `color` is a hex string ("#8b5cf6"); `icon`
+  // is a lucide-react component name resolved client-side. Both
+  // nullable so creating a product doesn't force a styling decision.
+  color       String?
+  icon        String?
+  archivedAt  DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tasks   Task[]
+
+  @@unique([projectId, slug])
+  @@index([projectId])
+  @@index([projectId, status])
+  @@map("products")
+}
+
+enum ProductStatus {
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+// One row per project that's wired up to a GitHub repo. A project can be
+// linked to at most one repo today; if a team needs more we'd convert this
+// to a 1-to-many. The webhook secret is what we HMAC-verify incoming
+// payloads against — never returned in API responses (admin sets it once,
+// pastes it into GitHub, then it lives only here).
+model ProjectGitHubIntegration {
+  id                 String    @id @default(uuid())
+  projectId          String    @unique
+  // Format `owner/repo`. We split on `/` at the route layer; storing both
+  // halves separately makes querying cleaner.
+  repoOwner          String
+  repoName           String
+  webhookSecret      String
+  // When true, a merged PR carrying `Closes <TASK-ID>` automatically moves
+  // the task to DONE (still gated by AC done-gate). Off by default — admins
+  // opt in once they trust the linkage.
+  autoCloseOnMerge   Boolean   @default(false)
+  // Last SUCCESSFUL webhook delivery (event accepted + processed without
+  // throwing). Surfaced in the settings UI as "last heard from GitHub: X
+  // minutes ago". Round 2 follow-up #11: previously this was stamped at the
+  // start of the handler, before processing — meaning a string of failing
+  // webhooks (DB down, race with disconnect, etc.) still showed "last
+  // received 30s ago" and admins wouldn't notice the integration was broken.
+  lastWebhookAt      DateTime?
+  // Last FAILED webhook delivery. Lets the settings UI flag a yellow/red
+  // pill when the latest activity was an error, even if a much-older
+  // success exists. Reset implicitly on the next successful delivery (we
+  // just stop updating it; the timestamp gap tells the story).
+  lastWebhookErrorAt DateTime?
+  // Short message describing the latest error. Truncated to keep this
+  // column small; full traceback goes to server logs.
+  lastWebhookError   String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("project_github_integrations")
+}
+
+// A project-scoped document stored on S3. Surface for non-code project
+// context: specs, design briefs, contracts, runbooks, security policies,
+// reference PDFs. Two consumers:
+//
+//   - Humans (admin UI, client portal Documents tab): upload + browse +
+//     download. Upload via presigned S3 PUT URL so file bytes never
+//     traverse the API server — keeps Railway's request size limits out
+//     of the picture and lets 50MB+ uploads work cleanly.
+//
+//   - Agents (Manjari & co.): get a list of available documents through
+//     the knowledge-pack endpoint (metadata only — title, description,
+//     category, sizeBytes — no content). On a hit, they fetch via a
+//     presigned GET URL through the agent-only download endpoint. The
+//     agent never sees the bucket name or AWS credentials; it sees a
+//     short-lived URL the backend issued just for it.
+//
+// `s3Key` is the unique object identifier within the bucket. Format:
+// `projects/<projectId>/<docId>/<filename>` — keeps project-level
+// directory listings cheap, and prefixing by docId lets us drop a doc
+// without touching siblings even when filenames collide.
+//
+// `status` flow:
+//   - PENDING (created at presigned-upload time; client hasn't confirmed
+//     S3 PUT yet)
+//   - READY  (confirmed; appears in list + KP)
+//   - DELETED (soft delete; S3 object removed by async cleanup worker)
+model ProjectDocument {
+  id          String      @id @default(uuid())
+  projectId   String
+  title       String
+  description String?     @db.Text
+  category    DocCategory @default(OTHER)
+
+  // Bucket name is stored on the row so a future move (e.g. cold-storage
+  // tier) doesn't require a migration — the row just points at wherever
+  // the bytes ended up. App code reads env.S3_DOCUMENTS_BUCKET on new
+  // uploads but trusts the per-row value on download.
+  s3Bucket String
+  s3Key    String @unique
+
+  filename    String // original upload filename, for the download Content-Disposition
+  contentType String // canonical MIME
+  sizeBytes   Int
+
+  status       DocStatus @default(PENDING)
+  uploadedById String
+  uploadedAt   DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  // Soft-delete tombstone; set when status transitions to DELETED.
+  deletedAt    DateTime?
+
+  project    Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  uploadedBy User    @relation("ProjectDocumentUploader", fields: [uploadedById], references: [id])
+
+  // Most lookups filter by project + status (=READY), and order by
+  // uploadedAt desc. The compound index covers the common path.
+  @@index([projectId, status, uploadedAt(sort: Desc)])
+  @@map("project_documents")
+}
+
+model ProjectMember {
+  id        String   @id @default(uuid())
+  userId    String
+  projectId String
+  role      UserRole
+  joinedAt  DateTime @default(now())
+
+  // Per-project "full access" grant (2026-06-02). When true on a CLIENT
+  // member, that client sees the FULL internal view of THIS project only —
+  // every task (clientVisible=false included), decisions, and internal
+  // task comments — instead of the stripped client-visible subset. Scoped
+  // to the membership so a client on multiple projects can have full
+  // access to one and the normal portal view of another. Only SUPER_ADMIN
+  // can flip it (enforced in project.service.setMemberFullAccess). Inert
+  // on staff roles, who already see internal work via their role. This is
+  // the ONLY full-client-access mechanism — the old blunt global
+  // User.extendedClientAccess flag was retired (2026-06-02).
+  fullAccess Boolean @default(false)
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, projectId])
+  // Membership-by-project lookup is the hot path for projectAccess on every
+  // authenticated request. The unique index on (userId, projectId) only
+  // serves the leading column (userId) — adding a (projectId) index lets
+  // membership lookups by project hit a btree directly (QA finding #58).
+  @@index([projectId])
+  @@map("project_members")
+}
+
+model Task {
+  id                  String       @id @default(uuid())
+  projectId           String
+  taskNumber          Int          @default(0)
+  title               String
+  description         String?      @db.Text
+  taskType            TaskType     @default(FEATURE)
+  status              TaskStatus   @default(BACKLOG)
+  priority            TaskPriority @default(P2)
+  storyPoints         Int?
+  sprintId            String?
+  epicId              String?
+  // Optional milestone scoping. Lets tasks roll up to a specific
+  // milestone for "is this milestone on track?" calculations + the
+  // client-facing milestone progress bar. NULL is "this task isn't
+  // associated with a single milestone" — the common case for
+  // sprint-level work and chore tasks. Milestone deletion cascades
+  // to NULL here (FK rule below) so deleting a milestone doesn't drop
+  // any task history.
+  milestoneId         String?
+  // Optional product scoping (PR C feature #6). NULL is "project-level
+  // work that doesn't fit a single product" — admin setup, contracts,
+  // cross-cutting platform work. Product deletion cascades to NULL
+  // here (FK rule below) so archiving a product preserves task history.
+  productId           String?
+  assigneeId          String?
+  creatorId           String
+  dueDate             DateTime?
+  labels              String[]
+  subtasks            Json         @default("[]")
+  acceptanceCriteria  Json         @default("[]")
+  customFields        Json         @default("{}")
+  isBlocked           Boolean      @default(false)
+  blockerNote         String?
+  clientVisible       Boolean      @default(false)
+  // True when the task originated from a CLIENT submitting via their
+  // portal kanban (forced clientVisible=true + status=BACKLOG at create
+  // time; team triages from there). Stored as an explicit boolean so
+  // "incoming requests for this project" stays cheap to query and the
+  // workflow provenance survives any future role flip on the creator.
+  clientRequested     Boolean      @default(false)
+  // Review workflow (PR B feature #5). Set when a task is handed off
+  // via the explicit "Request review" action. assigneeId stays put
+  // (the original worker keeps the credit + workload attribution);
+  // reviewerId carries the current ball. Cleared on review-decision
+  // (approve → DONE, request_changes → IN_PROGRESS). Reviewer can be
+  // any project member, including the client — that's the whole point
+  // of replacing "swap the assignee" with an explicit reviewer field.
+  reviewerId          String?
+  reviewRequestedAt   DateTime?
+  reviewRequestedById String?
+  sortOrder           Int          @default(0)
+  isSeedData          Boolean      @default(false)
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  project          Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  sprint           Sprint?             @relation(fields: [sprintId], references: [id], onDelete: SetNull)
+  epic             Epic?               @relation(fields: [epicId], references: [id], onDelete: SetNull)
+  milestone        Milestone?          @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
+  product          Product?            @relation(fields: [productId], references: [id], onDelete: SetNull)
+  assignee         User?               @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  creator          User                @relation("TaskCreator", fields: [creatorId], references: [id])
+  reviewer         User?               @relation("TaskReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
+  reviewRequester  User?               @relation("TaskReviewRequester", fields: [reviewRequestedById], references: [id], onDelete: SetNull)
+  comments         Comment[]
+  statusHistory    TaskStatusHistory[]
+  dailyUpdateTasks DailyUpdateTask[]
+  timeEntries      TimeEntry[]
+  linksFrom        TaskLink[]          @relation("LinksFrom")
+  linksTo          TaskLink[]          @relation("LinksTo")
+  externalLinks    TaskExternalLink[]
+  subscriptions    TaskSubscription[]
+  nudges           TaskNudge[]
+  linkedActivities LinkedTask[] // DevelopmentOps: activities linked to this task
+
+  @@unique([projectId, taskNumber])
+  @@index([projectId, status])
+  @@index([assigneeId])
+  // "What's assigned to X in project Y" is the engineer-dashboard query.
+  // The bare `assigneeId` index works but Postgres has to filter projectId
+  // post-fetch; the composite makes that direct (QA finding #44).
+  @@index([projectId, assigneeId])
+  @@index([sprintId])
+  @@index([epicId])
+  // Roll-up query: "all tasks under this milestone" — used by the
+  // per-milestone progress bar + future per-milestone forecast.
+  @@index([milestoneId])
+  @@index([projectId, clientVisible])
+  // "Incoming client requests" is its own dashboard slice — index it the
+  // same way as clientVisible so the triage view is fast even at 10k tasks.
+  @@index([projectId, clientRequested])
+  // "Tasks waiting on me to review" (dashboard slice) + scoped lookups.
+  @@index([reviewerId])
+  @@index([projectId, reviewerId])
+  // Product scoping (PR C feature #6) — "all tasks in this product" is
+  // the hot query on the product detail page kanban.
+  @@index([productId])
+  @@index([projectId, productId])
+  @@map("tasks")
+}
+
+// Outbound link from a task to a record in another system (today: GitHub PRs;
+// future: Slack threads, Linear issues, support tickets). Kept as a single
+// flat table rather than per-system because the read pattern — "show
+// everything attached to this task" — needs one query, and the row count per
+// task is always small (1–3 PRs typical).
+model TaskExternalLink {
+  id           String                @id @default(uuid())
+  taskId       String
+  kind         TaskExternalLinkKind
+  // The provider's stable identifier. For GitHub PRs: `<owner>/<repo>#<num>`.
+  // The unique guarantees we never double-link the same PR to the same task,
+  // so re-deliveries / replays of the same webhook are idempotent.
+  externalId   String
+  url          String
+  title        String?
+  state        TaskExternalLinkState @default(OPEN)
+  // PR author display name + avatar URL — captured once at link time so the
+  // task page doesn't need to call out to GitHub on every render.
+  authorName   String?
+  authorAvatar String?
+  openedAt     DateTime?
+  mergedAt     DateTime?
+  closedAt     DateTime?
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, kind, externalId])
+  @@index([taskId])
+  @@map("task_external_links")
+}
+
+enum TaskExternalLinkKind {
+  GITHUB_PR
+}
+
+enum TaskExternalLinkState {
+  OPEN
+  MERGED
+  CLOSED
+}
+
+enum TaskLinkType {
+  BLOCKS // fromTask blocks toTask  (inverse view: toTask is BLOCKED_BY fromTask)
+  RELATES_TO // peer relationship; we still store directionally for audit
+  DUPLICATES // fromTask duplicates toTask  (inverse view: toTask is DUPLICATED_BY fromTask)
+  // PR C feature #7 — bug triage spin-off. `fromTask was spawned from
+  // toTask`. We add a dedicated kind (rather than reusing RELATES_TO)
+  // so the slide-over can render parent/child semantics correctly:
+  // the parent bug shows "Spawned tasks (3)", each child shows
+  // "Spawned from <bug title>".
+  SPAWNED_FROM
+}
+
+/// Directional link between two tasks within the same project.
+/// BLOCKS / DUPLICATES are asymmetric (rendered as "Blocks"/"Blocked by",
+/// "Duplicates"/"Duplicated by"); RELATES_TO is symmetric.
+model TaskLink {
+  id          String       @id @default(uuid())
+  fromTaskId  String
+  toTaskId    String
+  type        TaskLinkType
+  createdById String
+  createdAt   DateTime     @default(now())
+
+  fromTask  Task @relation("LinksFrom", fields: [fromTaskId], references: [id], onDelete: Cascade)
+  toTask    Task @relation("LinksTo", fields: [toTaskId], references: [id], onDelete: Cascade)
+  createdBy User @relation(fields: [createdById], references: [id])
+
+  @@unique([fromTaskId, toTaskId, type])
+  @@index([fromTaskId])
+  @@index([toTaskId])
+  @@map("task_links")
+}
+
+// ─── TaskSubscription ──────────────────────────────────────────────
+//
+// Users follow a task to receive notifications on new comments + on
+// significant edits (title, description, priority, due-date, status).
+// Distinct from project membership — a user can be in a project but
+// only subscribed to a few tasks within it.
+//
+// `source` records WHY a subscription exists so we can render that
+// honestly in the UI ("auto-subscribed because you were assigned")
+// and so the auto-subscribe machinery can re-add a row only when
+// it should — e.g. if a user manually unsubscribes from a task they
+// were auto-subscribed to, we don't re-add them next time the
+// assignment changes (their unsubscribe is intentional).
+enum TaskSubscriptionSource {
+  AUTO_ASSIGNEE
+  AUTO_REVIEWER
+  AUTO_CREATOR
+  AUTO_MENTIONED
+  MANUAL
+}
+
+model TaskSubscription {
+  id        String                 @id @default(uuid())
+  taskId    String
+  userId    String
+  source    TaskSubscriptionSource
+  createdAt DateTime               @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // One subscription per (task, user) — re-subscribe is idempotent.
+  @@unique([taskId, userId])
+  @@index([taskId])
+  @@index([userId])
+  @@map("task_subscriptions")
+}
+
+// ─── TaskNudge ─────────────────────────────────────────────────────
+//
+// Records every nudge sent on a task. Used to enforce the per-
+// (task, sender) 24h cooldown — prevents nudge spam. Also serves as
+// a lightweight audit trail of "who poked whom about what."
+//
+// We don't add a `recipient` column — the recipient is implicitly the
+// task's assignee at nudge-time. If the assignee changes, future
+// nudges go to the new assignee; historical rows still reflect when
+// the nudge was sent.
+model TaskNudge {
+  id        String   @id @default(uuid())
+  taskId    String
+  senderId  String
+  message   String?  @db.Text
+  createdAt DateTime @default(now())
+
+  task   Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  sender User @relation("TaskNudgeSender", fields: [senderId], references: [id])
+
+  // Hot query: "has THIS user nudged THIS task in the last 24h?" —
+  // the cooldown enforcement. Composite is the right shape.
+  @@index([taskId, senderId, createdAt])
+  @@map("task_nudges")
+}
+
+model Sprint {
+  id         String       @id @default(uuid())
+  projectId  String
+  // Optional FK to the Epic that owns this sprint. Set by the markdown
+  // ingestion path when a Sprint is nested inside an Epic; null for
+  // sprints created via the in-app planner (which today is project-flat).
+  // Lets dedup distinguish "Epic A's Sprint 1" from "Epic B's Sprint 1"
+  // (QA I-C2). onDelete: SetNull so deleting an epic detaches its sprints
+  // but doesn't drop them.
+  epicId     String?
+  name       String
+  number     Int
+  goal       String?      @db.Text
+  startDate  DateTime
+  endDate    DateTime
+  status     SprintStatus @default(PLANNING)
+  retroNotes Json?
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  epic    Epic?   @relation(fields: [epicId], references: [id], onDelete: SetNull)
+  tasks   Task[]
+
+  @@unique([projectId, number])
+  @@index([projectId, status])
+  @@index([epicId])
+  @@map("sprints")
+}
+
+model Epic {
+  id          String     @id @default(uuid())
+  projectId   String
+  title       String
+  description String?    @db.Text
+  color       String     @default("#6366f1")
+  status      EpicStatus @default(OPEN)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  project Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tasks   Task[]
+  sprints Sprint[]
+
+  @@index([projectId])
+  @@map("epics")
+}
+
+model Milestone {
+  id            String          @id @default(uuid())
+  projectId     String
+  title         String
+  description   String?         @db.Text
+  date          DateTime
+  status        MilestoneStatus @default(UPCOMING)
+  clientVisible Boolean         @default(true)
+  isSeedData    Boolean         @default(false)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  project  Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  comments Comment[]
+  // Tasks associated with this milestone. Used by the per-milestone
+  // progress aggregator (% complete, story points done/total).
+  tasks    Task[]
+
+  @@index([projectId])
+  @@map("milestones")
+}
+
+model Decision {
+  id           String         @id @default(uuid())
+  projectId    String
+  title        String
+  rationale    String         @db.Text
+  alternatives String?        @db.Text
+  status       DecisionStatus @default(PROPOSED)
+  tags         String[]
+  createdById  String
+  isSeedData   Boolean        @default(false)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy User    @relation(fields: [createdById], references: [id])
+
+  @@index([projectId])
+  @@map("decisions")
+}
+
+// Captures the moment a user accepted the confidentiality terms for a specific
+// project. One row per (user, project). Stores the snapshot of the agreed text
+// + IP + UA so this is a legally-defensible audit record — survives even if the
+// boilerplate text changes later.
+model ProjectAcknowledgment {
+  id               String   @id @default(uuid())
+  userId           String
+  projectId        String
+  acknowledgedAt   DateTime @default(now())
+  ipAddress        String?
+  userAgent        String?  @db.Text
+  acknowledgedText String   @db.Text
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, projectId])
+  @@index([projectId])
+  @@map("project_acknowledgments")
+}
+
+// Agreed deliverables for a project — drives the client sign-off workflow.
+// Status transitions: PENDING → IN_PROGRESS → DELIVERED → SIGNED_OFF (terminal)
+//                                              ↘ REJECTED → IN_PROGRESS
+model Deliverable {
+  id                 String            @id @default(uuid())
+  projectId          String
+  title              String
+  description        String?           @db.Text
+  acceptanceCriteria String?           @db.Text
+  status             DeliverableStatus @default(PENDING)
+  targetDate         DateTime?
+  deliveredAt        DateTime?
+  signedOffAt        DateTime?
+  signedOffById      String?
+  rejectionNote      String?           @db.Text
+  sortOrder          Int               @default(0)
+  isSeedData         Boolean           @default(false)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  project     Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  signedOffBy User?   @relation("DeliverableSignedOff", fields: [signedOffById], references: [id])
+
+  @@index([projectId])
+  @@map("deliverables")
+}
+
+model Comment {
+  id          String    @id @default(uuid())
+  projectId   String
+  taskId      String?
+  milestoneId String?
+  authorId    String
+  content     String    @db.Text
+  isSeedData  Boolean   @default(false)
+  // Comment subtype discriminator. "plain" = a normal thread comment
+  // (the only kind before 2026-06). "story_update" = a structured
+  // progress update an engineer posts against the task using the
+  // client-facing story template; `storyData` then holds the parsed
+  // fields and the FE renders it as a distinct card (not a plain
+  // markdown bubble). Stored as a string (not a Prisma enum) so adding
+  // future kinds stays an additive, migration-free change.
+  kind        String    @default("plain")
+  // Structured payload for a "story_update" comment — the parsed
+  // template fields (objective, currentTask, reason, impact,
+  // designChange, progress, nextStep). NULL for plain comments. The
+  // `content` column always holds a plaintext rendering of the same
+  // data so search, the productivity scorer, and any kind-unaware
+  // reader still degrade gracefully.
+  storyData   Json?
+  // Set on the first edit (author's own PATCH /comments/:id). Lets the FE
+  // render an "edited" badge without confusing it with the auto-bumping
+  // `updatedAt` (which moves on any field, including future system-driven
+  // updates). Round 2 follow-up R2.
+  editedAt    DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  project   Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  task      Task?      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  milestone Milestone? @relation(fields: [milestoneId], references: [id], onDelete: Cascade)
+  author    User       @relation(fields: [authorId], references: [id])
+
+  @@index([projectId])
+  @@index([taskId])
+  // The client task view pins the latest story update — query is
+  // "comments on this task of kind story_update, newest first".
+  @@index([taskId, kind])
+  @@map("comments")
+}
+
+model StatusUpdate {
+  id        String       @id @default(uuid())
+  projectId String
+  authorId  String
+  signal    HealthStatus
+  note      String?      @db.Text
+  createdAt DateTime     @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  author  User    @relation(fields: [authorId], references: [id])
+
+  @@index([projectId])
+  @@map("status_updates")
+}
+
+model Activity {
+  id         String   @id @default(uuid())
+  projectId  String?
+  userId     String
+  action     String
+  targetType String?
+  targetId   String?
+  details    Json?
+  createdAt  DateTime @default(now())
+
+  project Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User     @relation(fields: [userId], references: [id])
+
+  @@index([projectId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("activities")
+}
+
+// ─── IDEMPOTENCY ─────────────────────────────────────────────────────────
+//
+// 2026-05-23 — Layer 2 (agent control) infrastructure.
+//
+// Agents (and any other API client) can send an `Idempotency-Key` header on
+// state-changing requests so that a retry after a network failure replays
+// the original response instead of creating a duplicate resource. Without
+// this, an agent that times out on POST /tasks doesn't know whether the
+// task was created — and naively retrying would create two tasks.
+//
+// Contract (matches Stripe's well-known shape so external developers
+// recognize it immediately):
+//
+//   • Client sends `Idempotency-Key: <opaque-string>` on POST/PATCH/PUT/DELETE.
+//   • Server fingerprints the request body + path + method into `requestHash`.
+//   • If (userId, key, method, path) exists AND requestHash matches:
+//       → REPLAY the stored response (same status + body).
+//   • If exists AND requestHash differs:
+//       → 422 "Idempotency-Key reused with a different request body"
+//   • If absent:
+//       → Process normally. AFTER the handler responds, store the response.
+//
+// TTL: 24 hours. The platform doesn't need longer because (a) any well-
+// behaved client retries within seconds, not days, and (b) the storage
+// grows linearly with traffic without periodic cleanup. A scheduled
+// `deleteMany({ where: { expiresAt: { lt: now } } })` runs daily.
+//
+// Scoping: per-user. Two different agents using the same key string get
+// independent dedupes — keys aren't a global namespace.
+model IdempotencyKey {
+  id String @id @default(uuid())
+
+  // The composite uniqueness contract — these three together identify a
+  // "same request" attempt. Path is stored as the original :param-templated
+  // path (not the resolved URL), so the same logical mutation on different
+  // resources doesn't collide.
+  key    String
+  userId String
+  method String // HTTP verb, uppercase
+  path   String // /api/v1/projects/:id/tasks (templated)
+
+  // SHA-256 of (method + path + sorted body JSON). When a retry comes in,
+  // we compare this. Mismatched bodies under the same key are explicit
+  // misuse and get a 422.
+  requestHash String
+
+  // The stored response we'll replay. statusCode is the HTTP status that
+  // was sent; responseBody is the JSON the server returned. Both are
+  // captured by the middleware AFTER the handler resolves.
+  statusCode   Int
+  responseBody Json
+
+  createdAt DateTime @default(now())
+  expiresAt DateTime // createdAt + 24h, indexed for cleanup sweep
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, key, method, path])
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("idempotency_keys")
+}
+
+// ─── TIMESHEETS ───
+
+enum TimesheetStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+}
+
+model TimesheetWeek {
+  id              String          @id @default(uuid())
+  userId          String
+  weekStart       DateTime        @db.Date
+  status          TimesheetStatus @default(DRAFT)
+  totalHours      Float           @default(0)
+  submittedAt     DateTime?
+  approvedBy      String?
+  approvedAt      DateTime?
+  rejectionReason String?         @db.Text
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  user     User  @relation("TimesheetSubmitter", fields: [userId], references: [id])
+  approver User? @relation("TimesheetApprover", fields: [approvedBy], references: [id])
+
+  @@unique([userId, weekStart])
+  @@index([userId])
+  @@index([status])
+  @@map("timesheet_weeks")
+}
+
+model TimeEntry {
+  id          String   @id @default(uuid())
+  userId      String
+  projectId   String
+  taskId      String?
+  date        DateTime @db.Date
+  hours       Float
+  description String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id])
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  task    Task?   @relation(fields: [taskId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, projectId, date, taskId])
+  @@index([userId, date])
+  @@index([projectId])
+  @@index([userId])
+  @@map("time_entries")
+}
+
+// ─── DAILY PROGRESS & PRODUCTIVITY ───
+
+enum Mood {
+  GREAT
+  GOOD
+  NEUTRAL
+  STRUGGLING
+  BLOCKED
+}
+
+model DailyUpdate {
+  id          String   @id @default(uuid())
+  userId      String
+  date        DateTime @db.Date
+  summary     String   @db.Text
+  mood        Mood     @default(NEUTRAL)
+  blockers    String?  @db.Text
+  plans       String?  @db.Text
+  hoursWorked Float?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user  User              @relation(fields: [userId], references: [id])
+  tasks DailyUpdateTask[]
+
+  @@unique([userId, date])
+  @@index([userId])
+  @@index([date])
+  @@map("daily_updates")
+}
+
+model DailyUpdateTask {
+  id            String     @id @default(uuid())
+  dailyUpdateId String
+  taskId        String
+  note          String?
+  statusBefore  TaskStatus
+  statusAfter   TaskStatus
+
+  dailyUpdate DailyUpdate @relation(fields: [dailyUpdateId], references: [id], onDelete: Cascade)
+  task        Task        @relation(fields: [taskId], references: [id])
+
+  @@map("daily_update_tasks")
+}
+
+model TaskStatusHistory {
+  id         String     @id @default(uuid())
+  taskId     String
+  fromStatus TaskStatus
+  toStatus   TaskStatus
+  changedBy  String
+  changedAt  DateTime   @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [changedBy], references: [id])
+
+  @@index([taskId])
+  @@index([changedBy])
+  @@index([changedAt])
+  @@map("task_status_history")
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  type      String
+  title     String
+  body      String?
+  link      String?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+// ─── RBAC CONFIGURATION ───
+
+model Permission {
+  id          String  @id @default(uuid())
+  key         String  @unique
+  label       String
+  category    String
+  description String?
+
+  rolePermissions RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  id           String   @id @default(uuid())
+  role         UserRole
+  permissionId String
+  granted      Boolean  @default(false)
+
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([role, permissionId])
+  @@map("role_permissions")
+}
+
+// ///////////////////////////////////////////////////////////
+// CMS MODULE - COMPLETELY SEPARATE FROM EXISTING PROJECTS //
+// ///////////////////////////////////////////////////////////
+
+// CMS Enums
+enum CmsBlogStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum CmsTemplateType {
+  ARTICLE
+  TUTORIAL
+  NEWS
+  CASE_STUDY
+  ANNOUNCEMENT
+}
+
+// CMS Content Project (represents external websites like Furix)
+model CmsContentProject {
+  id           String    @id @default(uuid())
+  name         String
+  slug         String    @unique
+  description  String?   @db.Text
+  apiKey       String    @unique
+  // Optional list of scopes/permissions the API key grants to external
+  // callers (e.g. ["leads.ingest"]). Empty = minimal public read access.
+  apiKeyScopes String[]  @default([])
+  domain       String?
+  isActive     Boolean   @default(true)
+  // Soft-delete (QA finding #33). Set to the deletion timestamp instead of
+  // hard-deleting so we keep the audit chain (rotated API keys, blog history
+  // for legal review) and can restore on accidental deletes. Public reads
+  // and the admin list both filter `deletedAt: null`.
+  deletedAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  blogs                 CmsBlog[]
+  mediaAssets           CmsMediaAsset[]
+  templates             CmsTemplate[]
+  contentEngineSearches ContentEngineSearch[]
+  generatedBlogDrafts   GeneratedBlogDraft[]
+  leads                 Lead[]
+
+  @@index([deletedAt])
+  @@map("cms_content_projects")
+}
+
+// External website lead submissions (ingested via public API keyed by
+// CmsContentProject.apiKey). Stores a flat audit trail and status for
+// follow-up. Duplicate detection is handled in the service layer.
+enum LeadStatus {
+  NEW
+  CONTACTED
+  CLOSED
+}
+
+model Lead {
+  id         String     @id @default(uuid())
+  projectId  String
+  website    String? // optional human-friendly website identifier
+  formType   String // e.g. "contact", "demo"
+  name       String?
+  email      String?
+  phone      String?
+  company    String?
+  message    String?    @db.Text
+  sourcePage String? // URL where the form was submitted
+  metadata   Json? // freeform payload/utm tags
+  status     LeadStatus @default(NEW)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  project CmsContentProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, email])
+  @@map("leads")
+}
+
+// CMS Templates (blog layouts)
+model CmsTemplate {
+  id          String          @id @default(uuid())
+  projectId   String
+  name        String
+  slug        String
+  type        CmsTemplateType
+  description String?         @db.Text
+  structure   Json // Template structure definition
+  isActive    Boolean         @default(true)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  project CmsContentProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  blogs   CmsBlog[]
+
+  @@unique([projectId, slug])
+  @@map("cms_templates")
+}
+
+// CMS Blogs
+model CmsBlog {
+  id            String        @id @default(uuid())
+  projectId     String
+  templateId    String?
+  title         String
+  slug          String
+  excerpt       String?       @db.Text
+  content       Json // Block-based content structure
+  featuredImage Json?
+  seo           Json?
+  tags          String[]      @default([])
+  categories    String[]      @default([])
+  status        CmsBlogStatus @default(DRAFT)
+  authorId      String
+  publishedAt   DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  project  CmsContentProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  template CmsTemplate?      @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  author   User              @relation(fields: [authorId], references: [id])
+
+  @@unique([projectId, slug])
+  @@index([projectId, status])
+  @@index([publishedAt])
+  @@map("cms_blogs")
+}
+
+// ─── CONTENT ENGINE ──────────────────────────────────────────────────────────
+//
+// The Content Engine is an AI-powered trend discovery + blog generation tool
+// embedded inside the CMS. Operators search a topic; the backend calls the
+// configured AI provider (Anthropic Claude by default) which synthesises
+// current online discussions, sentiment, SEO keywords, and blog ideas from
+// its training data. Operators then generate full blog drafts and push them
+// directly into the existing CmsBlog draft workflow.
+//
+// Three tables:
+//   ContentEngineSearch  — one row per operator search (topic + filters)
+//   AiAnalysisResult     — structured AI output for a search
+//   GeneratedBlogDraft   — AI-generated blog content before CMS promotion
+//
+
+model ContentEngineSearch {
+  id              String   @id @default(uuid())
+  projectId       String
+  createdById     String
+  topic           String
+  timeRange       String? // '24h' | '7d' | '30d' — operator-selected filter
+  sentimentFilter String? // 'positive' | 'negative' | 'neutral' — operator-selected filter
+  createdAt       DateTime @default(now())
+
+  project   CmsContentProject  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy User               @relation("ContentEngineSearchCreator", fields: [createdById], references: [id])
+  results   AiAnalysisResult[]
+
+  @@index([projectId])
+  @@index([createdById])
+  @@map("content_engine_searches")
+}
+
+model AiAnalysisResult {
+  id                String   @id @default(uuid())
+  searchId          String
+  topic             String
+  summary           String   @db.Text
+  sentiment         Json // { label: string, confidence: number }
+  trendScore        Int
+  viralScore        Int
+  engagementInsight String   @db.Text
+  trendingSubtopics String[]
+  commonQuestions   String[]
+  painPoints        String[]
+  seoKeywords       Json // { primary: string[], long_tail: string[], questions: string[] }
+  blogIdeas         Json // Array<{ title: string, angle: string, target_audience: string }>
+  recommendedTitle  String
+  recommendedTags   String[]
+  rawResponse       Json // Full AI provider response (for audit / replay)
+  createdAt         DateTime @default(now())
+
+  search          ContentEngineSearch  @relation(fields: [searchId], references: [id], onDelete: Cascade)
+  generatedDrafts GeneratedBlogDraft[]
+
+  @@index([searchId])
+  @@map("ai_analysis_results")
+}
+
+model GeneratedBlogDraft {
+  id          String   @id @default(uuid())
+  analysisId  String
+  projectId   String
+  createdById String
+  cmsBlogId   String? // Set once the draft is promoted to a real CmsBlog entry
+  title       String
+  slug        String
+  excerpt     String   @db.Text
+  content     Json // Block-based content matching CmsBlog.content structure
+  seo         Json? // { title, description, keywords }
+  tags        String[]
+  categories  String[]
+  // 'generated' = AI-produced, not yet in CMS
+  // 'draft_created' = promoted to a CmsBlog DRAFT
+  status      String   @default("generated")
+  createdAt   DateTime @default(now())
+
+  analysis  AiAnalysisResult  @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  project   CmsContentProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy User              @relation("GeneratedBlogDraftCreator", fields: [createdById], references: [id])
+
+  @@index([analysisId])
+  @@index([projectId])
+  @@map("generated_blog_drafts")
+}
+
+/// Per-product custom field definition. Lets each project track its own
+/// domain-specific structured data without schema migrations — Furix tracks
+/// CVE/CVSS, RozCar tracks KYC status, ManaCalendar tracks Tithi, etc.
+/// Values are stored as a JSON map on Task.customFields keyed by definition.key.
+enum CustomFieldType {
+  TEXT
+  NUMBER
+  SELECT
+  DATE
+  URL
+  BADGE
+}
+
+model CustomFieldDefinition {
+  id        String          @id @default(uuid())
+  projectId String
+  /// Human-readable label shown on inputs and as the column header.
+  name      String
+  /// Stable machine key used in the Task.customFields JSON map. Must be
+  /// unique within a project, lowercase + underscores by convention.
+  key       String
+  fieldType CustomFieldType
+  /// Type-specific config: SELECT options, NUMBER min/max, BADGE color,
+  /// TEXT multiline flag, etc. Schema is type-checked at the service layer.
+  config    Json            @default("{}")
+  required  Boolean         @default(false)
+  /// Display order on the task detail panel. Lower = higher.
+  order     Int             @default(0)
+  /// Optional help text shown under the input.
+  hint      String?
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, key])
+  @@index([projectId, order])
+  @@map("custom_field_definitions")
+}
+
+// CMS Media Assets
+model CmsMediaAsset {
+  id           String   @id @default(uuid())
+  projectId    String
+  filename     String
+  originalName String
+  mimeType     String
+  size         Int
+  url          String
+  altText      String?  @db.Text
+  caption      String?  @db.Text
+  metadata     Json     @default("{}")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  project CmsContentProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("cms_media_assets")
+}
+
+// ─── Compliance / Onboarding course models ───
+//
+// A `Course` is an authored compliance training (NDA + IP + No-Moonlighting + …).
+// Each course has multiple `CourseModule`s (content + optional Quiz) and multiple
+// `CourseDocument`s (the legally-binding texts). A user is `Enrollment`-ed in a
+// course; they progress through modules, take quizzes, and finish by signing each
+// document — producing one `DocumentSignature` row per (user, document, version).
+// Bumping `Course.version` triggers re-enrollment so consent stays current.
+
+model Course {
+  id                         String       @id @default(uuid())
+  slug                       String       @unique
+  title                      String
+  description                String?      @db.Text
+  version                    Int          @default(1)
+  isMandatoryOnHire          Boolean      @default(false)
+  passingScore               Int          @default(80)
+  // Per-user acknowledgment validity in days. Null = never expires (one-time
+  // acknowledgment). 365 = annual re-acknowledgment. Used by the maintenance
+  // job to compute Enrollment.expiresAt at completion time.
+  acknowledgmentValidityDays Int?
+  applicableRoles            UserRole[]
+  status                     CourseStatus @default(DRAFT)
+  publishedAt                DateTime?
+  createdAt                  DateTime     @default(now())
+  updatedAt                  DateTime     @updatedAt
+
+  modules     CourseModule[]
+  documents   CourseDocument[]
+  enrollments Enrollment[]
+
+  @@index([status, isMandatoryOnHire])
+  @@map("courses")
+}
+
+model CourseModule {
+  id               String   @id @default(uuid())
+  courseId         String
+  order            Int
+  title            String
+  contentBlocks    Json     @default("[]")
+  estimatedMinutes Int?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  course   Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  quiz     Quiz?
+  progress ModuleProgress[]
+
+  @@unique([courseId, order])
+  @@index([courseId])
+  @@map("course_modules")
+}
+
+model CourseDocument {
+  id        String   @id @default(uuid())
+  courseId  String
+  slug      String
+  title     String
+  bodyText  String   @db.Text
+  version   Int      @default(1)
+  order     Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  course     Course              @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  signatures DocumentSignature[]
+
+  @@unique([courseId, slug])
+  @@index([courseId])
+  @@map("course_documents")
+}
+
+model Quiz {
+  id           String   @id @default(uuid())
+  moduleId     String   @unique
+  passingScore Int      @default(80)
+  allowRetry   Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  module    CourseModule   @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  questions QuizQuestion[]
+  attempts  QuizAttempt[]
+
+  @@map("quizzes")
+}
+
+model QuizQuestion {
+  id          String       @id @default(uuid())
+  quizId      String
+  order       Int
+  prompt      String       @db.Text
+  type        QuestionType @default(MULTIPLE_CHOICE)
+  options     Json         @default("[]")
+  explanation String?      @db.Text
+
+  quiz Quiz @relation(fields: [quizId], references: [id], onDelete: Cascade)
+
+  @@unique([quizId, order])
+  @@map("quiz_questions")
+}
+
+model Enrollment {
+  id            String    @id @default(uuid())
+  userId        String
+  courseId      String
+  courseVersion Int
+  // Acknowledgment cycle. Starts at 1. Bumped each time the user re-takes the
+  // course (annual expiry, manual force-expire). Combined with courseVersion
+  // makes uniqueness work for multiple acknowledgments at the same version.
+  cycle         Int       @default(1)
+  enrolledAt    DateTime  @default(now())
+  completedAt   DateTime?
+  declinedAt    DateTime?
+  // Computed at completion as completedAt + Course.acknowledgmentValidityDays.
+  // Null means either not yet completed, or course has no expiry.
+  expiresAt     DateTime?
+
+  user           User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course         Course              @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  moduleProgress ModuleProgress[]
+  quizAttempts   QuizAttempt[]
+  signatures     DocumentSignature[]
+
+  @@unique([userId, courseId, courseVersion, cycle])
+  @@index([userId])
+  @@index([courseId])
+  @@index([expiresAt])
+  @@map("enrollments")
+}
+
+model ModuleProgress {
+  id               String    @id @default(uuid())
+  enrollmentId     String
+  moduleId         String
+  startedAt        DateTime  @default(now())
+  completedAt      DateTime?
+  scrolledToBottom Boolean   @default(false)
+  timeOnPageSec    Int       @default(0)
+  quizPassed       Boolean   @default(false)
+
+  enrollment Enrollment   @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  module     CourseModule @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+
+  @@unique([enrollmentId, moduleId])
+  @@map("module_progress")
+}
+
+model QuizAttempt {
+  id            String    @id @default(uuid())
+  enrollmentId  String
+  quizId        String
+  attemptNumber Int
+  startedAt     DateTime  @default(now())
+  submittedAt   DateTime?
+  scorePercent  Int?
+  passed        Boolean   @default(false)
+  answers       Json      @default("[]")
+
+  enrollment Enrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  quiz       Quiz       @relation(fields: [quizId], references: [id], onDelete: Cascade)
+
+  @@index([enrollmentId])
+  @@map("quiz_attempts")
+}
+
+// Legally-defensible signature record. One row per (enrollment, document, version).
+// signedTextSnapshot holds the FULL agreement text at sign time so future edits to
+// CourseDocument.bodyText cannot retroactively alter what the user agreed to.
+model DocumentSignature {
+  id                 String   @id @default(uuid())
+  enrollmentId       String
+  courseDocumentId   String
+  documentVersion    Int
+  signedAt           DateTime @default(now())
+  signedName         String
+  signedTextSnapshot String   @db.Text
+  ipAddress          String?
+  userAgent          String?  @db.Text
+  passwordReentered  Boolean  @default(false)
+  externalProvider   String?
+  externalEnvelopeId String?
+  externalAuditUrl   String?
+
+  enrollment     Enrollment     @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  courseDocument CourseDocument @relation(fields: [courseDocumentId], references: [id], onDelete: Cascade)
+
+  @@unique([enrollmentId, courseDocumentId, documentVersion])
+  @@index([enrollmentId])
+  @@map("document_signatures")
+}
+
+// Per-user notification mute preferences.
+//
+// Design:
+//   - One row per (userId, type) — sparse storage. The DEFAULT is
+//     "not muted"; absence of a row means the user wants the
+//     notification. Only opt-OUT entries persist.
+//   - `type` is a free-form string matching the values used in
+//     notification.service.ts (e.g. 'task_nudge'). NOT a Prisma enum
+//     because we add new notification types in nearly every feature
+//     PR — a schema migration per new type would be silly. The
+//     authoritative list lives in src/constants/notificationTypes.ts
+//     and is validated at the validator boundary.
+//   - Cascade on user delete: when an account is removed, drop their
+//     preferences with them. Don't leak settings to a future user
+//     who happens to take the same id (UUIDs make collision
+//     impossible in practice, but the cascade is the right safety).
+model NotificationPreference {
+  id        String   @id @default(uuid())
+  userId    String
+  type      String
+  muted     Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, type])
+  @@index([userId])
+  @@map("notification_preferences")
+}
+
+// ─── DEVELOPMENTOPS MODULE ───
+
+enum GitProvider {
+  GITHUB
+  GITLAB
+  BITBUCKET
+}
+
+enum RepositoryActivityType {
+  COMMIT
+  PR_OPENED
+  PR_MERGED
+  BRANCH_CREATED
+  RELEASE_PUBLISHED
+}
+
+enum EnvironmentType {
+  DEVELOPMENT
+  STAGING
+  PRODUCTION
+}
+
+enum EnvironmentStatus {
+  HEALTHY
+  DEGRADED
+  DOWN
+  UNKNOWN
+}
+
+enum PipelineStatus {
+  QUEUED
+  RUNNING
+  SUCCESS
+  FAILED
+  CANCELLED
+}
+
+enum DeploymentStatus {
+  PENDING
+  IN_PROGRESS
+  SUCCESS
+  FAILED
+  ROLLED_BACK
+}
+
+// Repository connection for Git providers
+model Repository {
+  id            String      @id @default(uuid())
+  projectId     String
+  provider      GitProvider
+  repoName      String
+  repoOwner     String
+  repoUrl       String
+  accessToken   String? // Encrypted at rest via DB encryption
+  defaultBranch String      @default("main")
+  isPrivate     Boolean     @default(false)
+  createdBy     String
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  project     Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  creator     User                 @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+  activities  RepositoryActivity[]
+  pipelines   Pipeline[]
+  deployments Deployment[]
+  releases    Release[]
+
+  @@unique([projectId, provider, repoOwner, repoName])
+  @@index([projectId])
+  @@map("repositories")
+}
+
+// Track Git activities (commits, PRs, releases, etc.)
+model RepositoryActivity {
+  id           String                 @id @default(uuid())
+  projectId    String
+  repositoryId String
+  activityType RepositoryActivityType
+  externalId   String // Prevent duplicates: provider + externalId
+  title        String
+  description  String?
+  authorName   String?
+  branchName   String?
+  activityUrl  String?
+  metadataJson Json                   @default("{}")
+  createdAt    DateTime               @default(now())
+
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  repository  Repository   @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  linkedTasks LinkedTask[]
+
+  @@unique([repositoryId, externalId])
+  @@index([projectId])
+  @@index([repositoryId, createdAt(sort: Desc)])
+  @@map("repository_activities")
+}
+
+// Link activities to tasks for cross-module visibility
+model LinkedTask {
+  id                   String   @id @default(uuid())
+  repositoryActivityId String
+  taskId               String
+  createdAt            DateTime @default(now())
+
+  activity RepositoryActivity @relation(fields: [repositoryActivityId], references: [id], onDelete: Cascade)
+  task     Task               @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@unique([repositoryActivityId, taskId])
+  @@index([taskId])
+  @@map("linked_tasks")
+}
+
+// Environment management (dev, staging, prod)
+model Environment {
+  id            String            @id @default(uuid())
+  projectId     String
+  name          String
+  type          EnvironmentType
+  branchName    String?
+  deploymentUrl String?
+  status        EnvironmentStatus @default(UNKNOWN)
+  description   String?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  deployments Deployment[]
+
+  @@unique([projectId, name])
+  @@index([projectId])
+  @@map("environments")
+}
+
+// CI/CD Pipelines
+model Pipeline {
+  id                 String      @id @default(uuid())
+  repositoryId       String
+  provider           GitProvider
+  pipelineName       String
+  externalPipelineId String
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  repository Repository    @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  runs       PipelineRun[]
+
+  @@unique([repositoryId, externalPipelineId])
+  @@index([repositoryId])
+  @@map("pipelines")
+}
+
+// Pipeline execution history
+model PipelineRun {
+  id          String         @id @default(uuid())
+  pipelineId  String
+  runNumber   Int
+  status      PipelineStatus
+  conclusion  String?
+  branch      String?
+  triggeredBy String?
+  startedAt   DateTime?
+  completedAt DateTime?
+  externalUrl String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  pipeline Pipeline @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+
+  @@unique([pipelineId, runNumber])
+  @@index([pipelineId, status])
+  @@index([pipelineId, completedAt(sort: Desc)])
+  @@map("pipeline_runs")
+}
+
+// Deployment tracking
+model Deployment {
+  id               String           @id @default(uuid())
+  projectId        String
+  environmentId    String
+  repositoryId     String
+  version          String
+  deployedBy       String?
+  deploymentStatus DeploymentStatus @default(PENDING)
+  deploymentTime   DateTime?
+  commitSha        String?
+  releaseNotes     String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  project        Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  environment    Environment @relation(fields: [environmentId], references: [id], onDelete: Restrict)
+  repository     Repository  @relation(fields: [repositoryId], references: [id], onDelete: Restrict)
+  deploymentUser User?       @relation(fields: [deployedBy], references: [id], onDelete: SetNull)
+
+  @@index([projectId])
+  @@index([environmentId, createdAt(sort: Desc)])
+  @@index([repositoryId])
+  @@map("deployments")
+}
+
+// Release tracking
+model Release {
+  id           String    @id @default(uuid())
+  repositoryId String
+  releaseTag   String
+  releaseName  String?
+  releaseNotes String?
+  publishedAt  DateTime?
+  createdBy    String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  repository Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  creator    User?      @relation(fields: [createdBy], references: [id], onDelete: SetNull)
+
+  @@unique([repositoryId, releaseTag])
+  @@index([repositoryId, publishedAt(sort: Desc)])
+  @@map("releases")
+}
+
+// Add relationships to existing models
+// Project relations added above: repositories, deployments, environments
+// User relations: createdRepositories, deploymentsCreated, releasesCreated
+// ─── PULSE — Device Health + Employee Productivity (2026-05-28) ───
+//
+// Telemetry surface for the headless Windows agent (Command Center desktop
+// companion). SUPER_ADMIN-only — the agent posts heartbeats + periodic
+// full snapshots; all reads are gated behind requireRoles('SUPER_ADMIN')
+// at the route layer plus an additional service-layer check.
+//
+// CRITICAL invariant: the agent NEVER writes the DB directly. All traffic
+// flows through backend services that authenticate the agent via a
+// per-device API key (Authorization: Device <token>). The auth middleware
+// validates the key against Device.apiKeyHash (sha-256, constant-time
+// compare) and refuses inactive/revoked devices before any handler runs.
+//
+// Enrollment flow:
+//   1. SUPER_ADMIN issues a single-use DeviceEnrollmentToken for an
+//      employee (optionally pre-bound to that user).
+//   2. Employee runs the installer; agent reads the token from its
+//      install-time config.
+//   3. Agent POSTs /api/v1/devices/enroll with the token + hardware
+//      fingerprint (machine UUID + primary MAC + OS install id).
+//   4. Backend creates a Device row, generates a fresh API key, hashes
+//      it, returns the cleartext ONCE in the response, and marks the
+//      enrollment token CONSUMED.
+//   5. All future heartbeats/snapshots use the API key.
+//
+// Telemetry rhythm:
+//   - Heartbeat (~5 min): touches Device.lastSeenAt + currentPowerState
+//     only. Cheap, frequent. No history row written.
+//   - Full snapshot (~60 min): writes a DeviceHealthSnapshot row, upserts
+//     the installed-software + missing-patch tables, runs the risk
+//     scorer, opens/resolves risk alerts.
+
+enum DevicePlatform {
+  WINDOWS
+  MACOS
+  LINUX
+}
+
+enum DeviceEnrollmentStatus {
+  PENDING_ENROLLMENT
+  ACTIVE
+  REVOKED
+  INACTIVE
+}
+
+enum DevicePowerState {
+  ON
+  IDLE
+  LOCKED
+  OFF
+}
+
+enum DeviceRiskLevel {
+  HEALTHY
+  AT_RISK
+  CRITICAL
+}
+
+enum DeviceAlertType {
+  AGENT_OFFLINE
+  MISSING_CRITICAL_PATCHES
+  REBOOT_REQUIRED_OVERDUE
+  ANTIVIRUS_DISABLED
+  FIREWALL_DISABLED
+  BITLOCKER_DISABLED
+  UNSUPPORTED_OS
+  RISKY_SOFTWARE_INSTALLED
+  HIGH_RISK_SCORE
+  // 2026-05-29 — Anti-tamper. Fires when the agent goes quiet for an
+  // unexpectedly long window during what should be active hours.
+  HEARTBEAT_GAP_DETECTED
+  // 2026-05-29 — Anti-tamper. Fires when a mouse-jiggler / Caffeine-
+  // style "keep awake" process is detected in the foreground or as a
+  // long-running process.
+  TAMPER_TOOL_DETECTED
+  // 2026-05-29 — Fires when an entertainment app dominates the
+  // foreground for an unusual portion of the workday.
+  EXCESSIVE_DISTRACTION
+}
+
+enum DeviceAlertSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+model Device {
+  id String @id @default(uuid())
+
+  // Stable hardware fingerprint (machine UUID + primary MAC + OS install
+  // id, hashed). Re-enrolling the same machine produces the same value,
+  // which lets us detect "agent reinstalled on the same laptop" vs.
+  // "fresh device".
+  fingerprint String @unique
+
+  hostname  String
+  platform  DevicePlatform
+  osVersion String?
+  osBuild   String?
+  arch      String?
+
+  // Owning employee. Nullable: a device may be enrolled before owner
+  // assignment, or it may be a shared kiosk. SET NULL on user delete
+  // preserves the telemetry record for reassignment.
+  ownerUserId String?
+  owner       User?   @relation("DeviceOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
+
+  // Per-device API key — only the hash is stored. Cleartext is shown
+  // once at enrollment and never retrievable. Rotation goes through a
+  // SUPER_ADMIN-only endpoint that revokes + reissues.
+  apiKeyHash   String @unique
+  // First 8 chars of the cleartext key for log search / audit display.
+  // Not a secret — same shape as Stripe's `sk_live_...` prefix surface.
+  apiKeyPrefix String
+
+  status          DeviceEnrollmentStatus @default(ACTIVE)
+  revokedAt       DateTime?
+  revokedByUserId String?
+  revokedBy       User?                  @relation("DeviceRevoker", fields: [revokedByUserId], references: [id], onDelete: SetNull)
+  revokedReason   String?
+
+  agentVersion    String?
+  lastSeenAt      DateTime?
+  // Audit-only; never used for auth or rate limiting decisions here.
+  lastHeartbeatIp String?
+
+  // ─── Wave 9 — agent self-health (2026-05-30) ───────────────────
+  // Captured on every heartbeat so the admin can spot an agent that's
+  // bleeding memory, throwing errors silently, or running on a CPU-
+  // starved machine. Nullable for back-compat with pre-Wave-9 agents.
+  lastCpuPercent        Float?
+  lastMemoryMb          Float?
+  agentErrorCount       Int       @default(0)
+  agentLastErrorAt      DateTime?
+  agentLastErrorMessage String?
+
+  // Denormalized current rollup so the admin list view doesn't have to
+  // join the latest snapshot for every row. Recomputed on each snapshot.
+  currentRiskScore  Int?
+  currentRiskLevel  DeviceRiskLevel?
+  currentPowerState DevicePowerState?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  enrollmentToken   DeviceEnrollmentToken?    @relation("EnrollmentTokenDevice")
+  snapshots         DeviceHealthSnapshot[]
+  installedSoftware DeviceInstalledSoftware[]
+  missingPatches    DeviceMissingPatch[]
+  riskAlerts        DeviceRiskAlert[]
+  appActivity       DeviceAppActivity[]
+
+  @@index([ownerUserId])
+  @@index([status])
+  @@index([currentRiskLevel])
+  @@index([lastSeenAt])
+  @@map("devices")
+}
+
+model DeviceEnrollmentToken {
+  id String @id @default(uuid())
+
+  // SHA-256 hash of the single-use bootstrap token. The cleartext is
+  // returned exactly once at issuance and is NEVER stored — an attacker
+  // with DB read access (leaked backup, errant SQL, insider) cannot
+  // recover a usable token. On enrollment the agent presents the
+  // cleartext; we hash it and look up by this column. Same at-rest
+  // posture as Device.apiKeyHash. (2026-06-01 enterprise-hardening M7.)
+  tokenHash String @unique
+
+  // Last 4 chars of the cleartext token, kept solely for the admin list
+  // view's masked display ("····ab12"). 4 hex chars carry no brute-force
+  // value, so this is safe to store in the clear.
+  tokenLast4 String
+
+  // Optional pre-binding. When set, the device is auto-assigned to this
+  // user on enrollment.
+  assignedUserId String?
+  assignedUser   User?   @relation("EnrollmentTokenAssignee", fields: [assignedUserId], references: [id], onDelete: SetNull)
+
+  issuedByUserId String
+  issuedBy       User   @relation("EnrollmentTokenIssuer", fields: [issuedByUserId], references: [id])
+
+  expiresAt          DateTime
+  consumedAt         DateTime?
+  consumedByDeviceId String?   @unique
+  consumedByDevice   Device?   @relation("EnrollmentTokenDevice", fields: [consumedByDeviceId], references: [id], onDelete: SetNull)
+
+  // SUPER_ADMIN-visible memo: e.g. "Pankaj's new laptop", "shared QA box".
+  note String?
+
+  createdAt DateTime @default(now())
+
+  @@index([assignedUserId])
+  @@index([issuedByUserId])
+  @@index([expiresAt])
+  @@map("device_enrollment_tokens")
+}
+
+model DeviceHealthSnapshot {
+  id       String @id @default(uuid())
+  deviceId String
+  device   Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  capturedAt DateTime @default(now())
+
+  // Productivity / presence (agent-computed; backend does NOT trust
+  // these for billing — just for the SUPER_ADMIN view).
+  powerState          DevicePowerState
+  uptimeSeconds       Int              @default(0)
+  lastBootAt          DateTime?
+  // 2026-05-29 — When the current interactive Windows session started.
+  // Comes from Win32_LogonSession.StartTime. Distinct from lastBootAt
+  // (the machine has been up since the boot; the user may have logged
+  // in much later).
+  currentSessionStart DateTime?
+  // 2026-05-29 — Total process count from Get-Process. Cheap sanity
+  // signal — a normal Windows session has 100–300 processes; numbers
+  // way off may indicate tampering or a hung agent.
+  runningProcessCount Int?
+  // Windows account name of the logged-in user at capture time. Used
+  // ONLY for cross-checking against the registered device owner; we
+  // surface a soft warning if they diverge ("device owner is X, but Y
+  // is signed in").
+  loggedInUserName    String?
+
+  // Security posture. Windows-first; other platforms may leave these
+  // null where the concept doesn't apply.
+  defenderEnabled    Boolean?
+  firewallEnabled    Boolean?
+  bitlockerEnabled   Boolean?
+  rebootRequired     Boolean?
+  pendingRebootSince DateTime?
+  unsupportedOs      Boolean?
+
+  // Risk rollup frozen at this snapshot so we can plot history without
+  // re-running the scorer. The CURRENT score on Device is the latest
+  // value; here we keep the trail.
+  riskScore Int
+  riskLevel DeviceRiskLevel
+
+  // Denormalized counts for cheap trend queries.
+  missingPatchCount  Int @default(0)
+  criticalPatchCount Int @default(0)
+  riskySoftwareCount Int @default(0)
+
+  // 2026-05-28b — Productivity rollup. The Windows agent tracks the
+  // time spent in each powerState since the LAST snapshot and reports
+  // it here. We sum across snapshots to draw the "today's active /
+  // locked / idle" view on the admin dashboard. activeSecondsBucket +
+  // lockedSecondsBucket + idleSecondsBucket roughly equal the snapshot
+  // interval; remainder is treated as OFF (agent wasn't running).
+  activeSecondsBucket Int @default(0)
+  idleSecondsBucket   Int @default(0)
+  lockedSecondsBucket Int @default(0)
+
+  // ─── Wave 9 — agent resilience signals (2026-05-30) ─────────────
+  // Battery: laptops only. Desktops without batteries leave these null.
+  batteryPercent         Int?
+  batteryCharging        Boolean?
+  batteryHealthPercent   Int?
+  // Disk: free percent + bytes on the OS volume.
+  diskFreePercent        Int?
+  diskFreeGb             Float?
+  // Network: which connection is the agent on right now?
+  networkType            String? // ETHERNET / WIFI / CELLULAR / VPN / UNKNOWN
+  networkConnectivity    String? // INTERNET / LOCAL_ONLY / NO_TRAFFIC / UNKNOWN
+  // Background-process tamper detection. Distinct from the foreground
+  // TAMPER bucket — these processes ran without ever holding focus,
+  // which is the prime mode of a real mouse-jiggler. JSON array of
+  // `{name, pid}` objects.
+  runningTamperProcesses Json?
+  // Snapshot-level tamper rollup so the admin list view doesn't have
+  // to count JSON every read.
+  tamperProcessCount     Int      @default(0)
+
+  agentVersion String?
+
+  @@index([deviceId, capturedAt])
+  @@index([capturedAt])
+  @@index([riskLevel])
+  @@map("device_health_snapshots")
+}
+
+model DeviceInstalledSoftware {
+  id       String @id @default(uuid())
+  deviceId String
+  device   Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  name        String
+  version     String?
+  publisher   String?
+  installDate DateTime?
+
+  // Backend-set classification. Examples: known credential stealers,
+  // remote-access tools, crypto miners, anything on the SUPER_ADMIN-
+  // maintained block list. The classifier runs at ingestion time; a
+  // future SUPER_ADMIN UI will let block-list rules be edited and
+  // back-applied.
+  isRisky    Boolean @default(false)
+  riskReason String?
+
+  // Upsert keeps firstSeenAt stable across refreshes; lastSeenAt bumps
+  // every full snapshot. Apps no longer present after a refresh are
+  // pruned by the ingestion step.
+  firstSeenAt DateTime @default(now())
+  lastSeenAt  DateTime @default(now())
+
+  @@unique([deviceId, name, version])
+  @@index([deviceId])
+  @@index([isRisky])
+  @@map("device_installed_software")
+}
+
+model DeviceMissingPatch {
+  id       String @id @default(uuid())
+  deviceId String
+  device   Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  // KB id (e.g., "KB5032190") for Windows; vendor-specific id otherwise.
+  patchId        String
+  title          String?
+  classification String? // "Security Updates", "Critical Updates", ...
+  severity       String? // "Critical", "Important", "Moderate", "Low"
+  releasedAt     DateTime?
+
+  firstSeenAt DateTime @default(now())
+  lastSeenAt  DateTime @default(now())
+
+  @@unique([deviceId, patchId])
+  @@index([deviceId])
+  @@index([severity])
+  @@map("device_missing_patches")
+}
+
+model DeviceRiskAlert {
+  id       String @id @default(uuid())
+  deviceId String
+  device   Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  type     DeviceAlertType
+  severity DeviceAlertSeverity
+  message  String
+
+  // Open / resolved lifecycle. Alerts are auto-opened by the risk-scoring
+  // step on snapshot ingest and auto-resolved on the next snapshot that
+  // no longer matches the trigger (e.g., reboot completed, AV re-enabled).
+  // SUPER_ADMINs can also manually resolve with a note. The service layer
+  // enforces "at most one OPEN alert per (deviceId, type)" — duplicates
+  // collapse to an updated existing row.
+  openedAt         DateTime  @default(now())
+  resolvedAt       DateTime?
+  resolvedByUserId String?
+  resolvedBy       User?     @relation("AlertResolver", fields: [resolvedByUserId], references: [id], onDelete: SetNull)
+  resolutionNote   String?
+
+  @@index([deviceId])
+  @@index([type])
+  @@index([severity])
+  @@index([resolvedAt])
+  @@index([deviceId, type, resolvedAt])
+  @@map("device_risk_alerts")
+}
+
+// ─── PULSE — App activity (2026-05-29) ───
+//
+// Per-device foreground app activity in hourly buckets. The agent
+// samples the foreground window every 30 seconds, accumulates seconds
+// per app, and ships the bucket on each hourly snapshot.
+//
+// Why one row per (device, bucket-window, app) rather than a row per
+// 30-sec sample: 30-sec resolution → 2,880 rows / day / device. With
+// 100 devices that's 288K rows / day. Hourly buckets reduce this by
+// ~50x while preserving "how much time on each app per hour" — more
+// than enough for the per-employee productivity view.
+//
+// Window titles are kept (latest seen during the bucket) so the
+// SUPER_ADMIN can see what was being worked on. Cross-checked against
+// the YouTube/Netflix/etc. pattern list at ingestion time and tagged
+// with a category for fast filtering.
+
+enum AppCategory {
+  // The signal "this employee is heads-down":
+  PRODUCTIVE // Code editors, Office, design tools, terminals
+  COMMUNICATION // Slack, Teams, Zoom, work email
+  // The signals to watch:
+  ENTERTAINMENT // YouTube, Netflix, Steam, Twitch, gaming
+  PERSONAL // Social media, personal browsing
+  // Catch-all:
+  UNKNOWN // Anything not matched by the built-in classifier
+  // Anti-cheat:
+  TAMPER // Mouse jigglers, Caffeine-style keep-awake tools
+}
+
+model DeviceAppActivity {
+  id       String @id @default(uuid())
+  deviceId String
+  device   Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  // The bucket window (typically 1 hour starting from a UTC hour boundary).
+  bucketStart DateTime
+  bucketEnd   DateTime
+
+  // Process executable name (e.g. "chrome.exe", "Code.exe"). Stored
+  // lower-case for case-insensitive matching against the classifier.
+  appName         String
+  // Friendly name if known (e.g. "Google Chrome", "Visual Studio Code").
+  appDisplayName  String?
+  // The window title last seen for this app in this bucket. Used for
+  // browser distraction detection (e.g. title contains "YouTube").
+  // Truncated to 512 chars to bound storage.
+  lastWindowTitle String?
+
+  // Classification at ingestion time.
+  category       AppCategory @default(UNKNOWN)
+  // If the category is ENTERTAINMENT/PERSONAL/TAMPER, the reason —
+  // surfaces in admin UI explanations ("Matched: YouTube via window title").
+  categoryReason String?
+
+  // Time spent with this app in the foreground during the bucket.
+  foregroundSeconds Int @default(0)
+
+  // When this row was inserted (debugging / late arrival detection).
+  capturedAt DateTime @default(now())
+
+  // The de-dup key: a retry of the same bucket merges rather than
+  // duplicating. Service layer enforces upsert on this key.
+  @@unique([deviceId, bucketStart, appName])
+  @@index([deviceId, bucketStart])
+  @@index([category])
+  @@index([capturedAt])
+  @@map("device_app_activity")
+}
+
+// ─── PULSE — Clock In / Clock Out (2026-05-28b) ───
+//
+// Employee-self clock-in/out. Distinct from automatic powerState
+// telemetry (the device may be on while the employee isn't working,
+// or the employee may be working without their laptop). This is the
+// human's declared work session.
+//
+// One row per session. clockedOutAt is null while the session is
+// open; the service layer refuses a second clockIn while one is
+// open. Sessions still open after 12h are auto-closed with
+// autoClosedAt set so the SUPER_ADMIN view can flag forgot-to-clock-
+// out cases without polluting the user's clock history.
+//
+// Privacy: an employee sees only their own sessions. SUPER_ADMIN sees
+// the team view via the Pulse admin endpoint.
+
+model ClockSession {
+  id           String    @id @default(uuid())
+  userId       String
+  user         User      @relation("ClockSessionUser", fields: [userId], references: [id], onDelete: Cascade)
+  clockedInAt  DateTime  @default(now())
+  clockedOutAt DateTime?
+  // Set when the auto-close sweep fires (>12h still open) so the row
+  // is distinguishable from a user-initiated clock-out. resolvedOutAt
+  // == COALESCE(clockedOutAt, autoClosedAt) for display.
+  autoClosedAt DateTime?
+  // Free-text per session — what the user is working on. Optional.
+  noteIn       String?
+  noteOut      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, clockedInAt])
+  // Open-session lookup hot path (where userId = X and clockedOutAt is
+  // null) used on every clock-in to refuse double-clocks.
+  @@index([userId, clockedOutAt])
+  @@map("clock_sessions")
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Composite Productivity Score (2026-05-29, R5)
+//
+// Multi-signal monthly productivity score. Universal weights — no
+// role-based scoring (founder correction R3: "everyone is important in
+// startups"). Real-time event-sourced via outbox pattern: every
+// emitting service writes a ProductivityEvent inside the same
+// transaction as its source mutation, guaranteeing the event log is
+// always in sync with reality.
+//
+// Architecture:
+//   Source mutation + outbox row  →  Prisma transaction
+//   ProductivityEvent rows         →  poll'd by scoreRecomputeWorker
+//   Per-user debounced recompute   →  upserts EmployeeProductivityScore
+//   Dashboard reads pre-computed   →  React Query 30s refetch
+//
+// See ~/.gstack/projects/saipreethamvudutha-Exargen_Command_Center/
+//   preetham-fix-pulse-probe-precompiled-and-encoding-design-*.md
+// for the full design rationale, weights, and rollout schedule.
+// ────────────────────────────────────────────────────────────────────
+
+enum ProductivitySignal {
+  STANDUP // daily standup discipline (daily_updates)
+  EXECUTION // tasks closed (tasks)
+  CODE // git contribution (github_webhook_events)
+  COMMUNICATION // comments + mentions (comments)
+  PRESENCE // clock hours + Pulse active + login discipline
+  DEEP_WORK // sustained focus blocks + productive-app ratio
+  DEVICE_HYGIENE // security posture + patches + agent uptime
+}
+
+enum ProductivityCadence {
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+enum ScoreBand {
+  HIGH // >= thresholdHigh (default 75) → "exceeds expectations"
+  MEDIUM // >= 40 < thresholdHigh         → "meets expectations"
+  LOW // < 40                          → "needs attention"
+}
+
+// Display-only self-identification. NEVER read by the scorer (R3).
+enum SelfRole {
+  ENGINEER
+  PM
+  DESIGNER
+  OPS
+  SALES
+  FOUNDER
+  OTHER
+}
+
+// Append-only event log feeding the productivity scorers.
+//
+// Every domain mutation that contributes to a score writes one row
+// here inside the SAME Prisma transaction as the source mutation
+// (outbox pattern). This guarantees:
+//   (a) No events are dropped on rollback.
+//   (b) No after-commit hooks needed.
+//   (c) Replaying the log reproduces the score exactly.
+//
+// The scoreRecomputeWorker polls this table for unprocessed rows
+// (processedAt IS NULL) every ~5s, debounces per-user to 60s, runs
+// the scorers over the rolling 30-day window, and upserts
+// EmployeeProductivityScore rows for the current daily/weekly/monthly
+// windows. Processed rows are kept for audit (13-month retention) and
+// then rolled up to per-week aggregates before raw payload deletion.
+model ProductivityEvent {
+  id          String             @id @default(uuid())
+  userId      String
+  user        User               @relation("ProductivityEventUser", fields: [userId], references: [id], onDelete: Cascade)
+  signal      ProductivitySignal
+  eventType   String             @db.VarChar(64) // e.g. 'standup.submitted', 'task.closed', 'pr.merged'
+  occurredAt  DateTime // when the underlying action happened (source-of-truth time)
+  recordedAt  DateTime           @default(now()) // when we inserted this row
+  processedAt DateTime? // null = unprocessed; non-null = consumed by worker
+  rawPayload  Json // exact input that fed the score (for audit + replay)
+  scoreDelta  Decimal?           @db.Decimal(6, 2) // contribution to sub-score; null = computed by scorer at recompute time
+  gamingFlag  String?            @db.VarChar(64) // non-null = filtered by a gaming guard (e.g. 'standup_too_short')
+  source      String             @db.VarChar(32) // 'daily_updates', 'tasks', 'github', 'comments', 'pulse_agent', 'clock_sessions', 'device_snapshots'
+  sourceId    String             @db.VarChar(128) // id in the source system, used for de-dupe
+
+  // De-dupe key: replaying the same source mutation must not produce a
+  // duplicate event. Different event_types from the same source row
+  // (e.g. 'pr.opened' and 'pr.merged' both keyed to the same PR id) are
+  // allowed.
+  @@unique([source, sourceId, eventType], name: "productivity_events_dedupe_key")
+  // For window-aggregate queries: "all of user X's events between T1 and T2".
+  @@index([userId, occurredAt])
+  // For the worker poller: "give me the oldest unprocessed events".
+  @@index([processedAt, recordedAt])
+  // For per-signal aggregates.
+  @@index([signal, occurredAt])
+  @@map("productivity_events")
+}
+
+// Computed score rows. One per (user, window, cadence). Upserted by
+// the scoreRecomputeWorker on each debounced recompute.
+//
+// signalScores, rawBreakdown, and flags are JSONB so the schema can
+// evolve as new signals come online without migrations. The
+// 3-layer audit trail (composite → per-signal → raw inputs) is fully
+// reconstructable from these three columns alone.
+model EmployeeProductivityScore {
+  id                     String              @id @default(uuid())
+  userId                 String
+  user                   User                @relation("EmployeeProductivityScoreUser", fields: [userId], references: [id], onDelete: Cascade)
+  // Window boundaries in the user's local timezone (calendar day).
+  // Storage is date-only; the user's TZ is read at compute time.
+  windowStart            DateTime            @db.Date
+  windowEnd              DateTime            @db.Date
+  cadence                ProductivityCadence
+  // 0.00 - 100.00; clamped after weight + gaming penalty.
+  compositeScore         Decimal             @db.Decimal(5, 2)
+  band                   ScoreBand
+  // { "STANDUP": 80, "EXECUTION": 65, "CODE": 92, "COMMUNICATION": 70,
+  //   "PRESENCE": 75, "DEEP_WORK": 82, "DEVICE_HYGIENE": 95 }
+  signalScores           Json
+  // Counts that fed each signal score, for the breakdown UI:
+  // { "STANDUP": { "substantive_standups": 18, "working_days": 20 },
+  //   "EXECUTION": { "tasks_closed": 12, "points": 47 }, ... }
+  rawBreakdown           Json
+  // Calibration metadata: PTO days, partial-day flags, gaming flags
+  // that fired, burnout warnings. JSONB so we can add new flag types
+  // without migrations.
+  flags                  Json
+  computedAt             DateTime            @default(now())
+  // Number of ProductivityEvents that fed this calculation. For audit
+  // queries: "what data did this score actually see?".
+  computedFromEventCount Int                 @default(0)
+
+  // One score row per (user, window, cadence). Recompute does UPSERT.
+  @@unique([userId, windowStart, windowEnd, cadence], name: "employee_productivity_scores_window_key")
+  // For the dashboard's "show me everyone's current week" query.
+  @@index([cadence, windowStart])
+  @@index([userId, cadence])
+  @@map("employee_productivity_scores")
+}
+
+// Append-only history of universal weight sets. Every PATCH from the
+// SUPER_ADMIN admin UI creates a new row; the row with the latest
+// effectiveFrom timestamp is the active set. We never UPDATE rows here
+// — full audit trail of "what weights were active when this score was
+// computed" is reconstructable from this table alone.
+//
+// Per R3: this is single-set (no role-keyed table). Per R5 the seeded
+// initial row uses:
+//   STANDUP=0.13, EXECUTION=0.22, CODE=0.10, COMMUNICATION=0.10,
+//   PRESENCE=0.18, DEEP_WORK=0.22, DEVICE_HYGIENE=0.05
+// All weights sum to 1.00; a CHECK constraint enforces this at the DB
+// level.
+model UniversalWeightSet {
+  id              String   @id @default(uuid())
+  // { "STANDUP": 0.13, "EXECUTION": 0.22, "CODE": 0.10, "COMMUNICATION": 0.10,
+  //   "PRESENCE": 0.18, "DEEP_WORK": 0.22, "DEVICE_HYGIENE": 0.05 }
+  // Application-level invariant: sum(weights.values()) == 1.0 ± 0.01
+  weights         Json
+  // Tunable per-signal anchors (e.g. weekly task-point baseline).
+  // Decoupled from weights so SUPER_ADMIN can recalibrate baselines
+  // without touching weights and vice-versa.
+  signalBaselines Json
+  // Score band thresholds, expressed in 0-100 composite-score space.
+  thresholdHigh   Int      @default(75)
+  thresholdLow    Int      @default(40)
+  // When this weight set started being applied. Append-only history;
+  // we never UPDATE. New PATCH = new row with a later effectiveFrom.
+  effectiveFrom   DateTime @default(now())
+  updatedBy       String
+  updatedByUser   User     @relation("UniversalWeightSetUpdater", fields: [updatedBy], references: [id])
+  // SUPER_ADMIN audit memo: why this change was made.
+  changeNote      String?  @db.Text
+
+  // Active set = max(effectiveFrom). Query pattern is fast.
+  @@index([effectiveFrom(sort: Desc)])
+  @@map("universal_weight_sets")
+}
+
+// Optional self-identified role + bio for an employee. DISPLAY ONLY —
+// the productivity scorer NEVER reads selfRole. Per R3 founder
+// correction: universal weights, no role-based scoring.
+//
+// customWeightOverrides is an emergency escape hatch: SUPER_ADMIN may
+// override the universal weights for one individual in edge cases
+// (e.g. new-hire ramp, role transition month). Audit-logged. Default
+// null = use universal weights.
+model EmployeeProfile {
+  userId                String    @id
+  user                  User      @relation("EmployeeProfileUser", fields: [userId], references: [id], onDelete: Cascade)
+  selfRole              SelfRole?
+  bio                   String?   @db.Text
+  // { "STANDUP": 0.15, ... } overrides for THIS user only. Must sum to
+  // 1.0 if non-null. SUPER_ADMIN-only edit, audit-logged.
+  customWeightOverrides Json?
+  customWeightSetAt     DateTime?
+  customWeightSetBy     String?
+  updatedAt             DateTime  @updatedAt
+
+  @@map("employee_profiles")
+}
+
+// ────────────────────────────────────────────────────────────────────
+// GitHub webhook audit log (Wave 3, PR #33 — CODE signal)
+//
+// Captures the raw webhook delivery for replay + reconciliation. The
+// scoreRecomputeWorker (Wave 5) cross-checks this table against
+// productivity_events to detect any GitHub deliveries that fired the
+// HMAC gate but failed to produce a productivity event (programming
+// bug, schema drift, etc.).
+//
+// Retention: 90 days raw. After that, the derived productivity_events
+// rows are the audit trail; we don't need to keep the full payload.
+// ────────────────────────────────────────────────────────────────────
+
+model GithubWebhookEvent {
+  id            String   @id @default(uuid())
+  // X-GitHub-Delivery header. UUID. Used as the de-dupe key —
+  // re-deliveries of the same event no-op on the second insert.
+  deliveryId    String   @unique @db.VarChar(64)
+  // X-GitHub-Event header. e.g. 'push', 'pull_request', 'pull_request_review'.
+  eventType     String   @db.VarChar(32)
+  // GitHub-side action (PR.action: 'opened'/'closed'/'edited' etc.).
+  // Null for events without an action field (e.g. push).
+  action        String?  @db.VarChar(32)
+  // Org/repo slug for the delivery, e.g. 'Exargen-AI/exargen-command-center'.
+  repo          String?  @db.VarChar(255)
+  // Login of the actor who triggered the event. Lowercased for join
+  // against User.githubLogin.
+  actorLogin    String?  @db.VarChar(64)
+  // Whether the actor was identified as a bot at write time. Stored
+  // separately so reconciliation queries don't re-derive bot status.
+  actorIsBot    Boolean  @default(false)
+  // Full raw payload as received from GitHub. JSONB so derived
+  // queries can filter without re-parsing.
+  rawPayload    Json
+  // Number of productivity_events produced from this delivery. 0 if
+  // no users matched or the event type was ignored.
+  eventsEmitted Int      @default(0)
+  receivedAt    DateTime @default(now())
+
+  @@index([eventType, receivedAt])
+  @@index([actorLogin, receivedAt])
+  @@index([receivedAt])
+  @@map("github_webhook_events")
+}

@@ -1,0 +1,233 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ────────────────────────────────────────────────────────────────────
+   FOUNDATIONS
+   ──────────────────────────────────────────────────────────────────── */
+
+html {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  /* iOS Safari paints a grey rectangle on tap by default; we have our own
+     :focus-visible + :hover treatments so kill the OS one. */
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  @apply text-gray-900;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: 16px; /* synced with tailwind.config base — team feedback #2 */
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11'; /* Inter alternates */
+  background-color: #fafbfc;
+}
+
+.dark body, html.dark body {
+  background-color: #141414; /* obsidian.deep — page canvas */
+  color: #dcddde;            /* obsidian.fg — primary text */
+}
+
+/* Focus ring — violet, soft glow. Visible without being aggressive. */
+*:focus-visible {
+  @apply outline-none;
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.32);
+  transition: box-shadow 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  border-radius: inherit;
+}
+
+::selection {
+  background-color: #ddd6fe; /* brand-200 */
+  color: #4c1d95;            /* brand-900 */
+}
+.dark ::selection {
+  background-color: rgba(109, 40, 217, 0.6); /* brand-700/60 */
+  color: #f5f3ff;             /* brand-50 */
+}
+
+/* Scrollbar — near-invisible until hover. Obsidian-style. */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.10);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  transition: background 0.2s ease;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(0, 0, 0, 0.25); background-clip: padding-box; }
+.dark ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.06); background-clip: padding-box; }
+.dark ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.18); background-clip: padding-box; }
+
+/* ────────────────────────────────────────────────────────────────────
+   PAGE TRANSITION
+   ──────────────────────────────────────────────────────────────────── */
+
+main { animation: pageIn 0.28s cubic-bezier(0.16, 1, 0.3, 1); }
+@keyframes pageIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ────────────────────────────────────────────────────────────────────
+   FORM FIELDS — explicit colors so dark mode never shows white-on-white
+   ──────────────────────────────────────────────────────────────────── */
+
+@layer base {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']):not([type='file']),
+  textarea,
+  select {
+    color: rgb(17 24 39);
+    background-color: rgb(255 255 255);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+    /* iOS Safari zooms into form fields whose computed font-size is under
+       16px. The visual design uses smaller text on inputs at lg+, so we
+       only enforce the floor below the mobile-shell breakpoint to keep
+       desktop unchanged. */
+  }
+  @media (max-width: 1023px) {
+    input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']):not([type='file']),
+    textarea,
+    select {
+      font-size: 16px;
+    }
+  }
+  .dark input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']):not([type='file']),
+  .dark textarea,
+  .dark select {
+    color: #dcddde;             /* obsidian text */
+    background-color: #262626;  /* obsidian panel */
+    border-color: #2f2f2f;      /* obsidian border */
+  }
+  .dark input:focus,
+  .dark textarea:focus,
+  .dark select:focus {
+    background-color: #2c2c2c;  /* obsidian raised */
+    border-color: #6d28d9;      /* brand-700 */
+  }
+}
+
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  -webkit-text-fill-color: rgb(17 24 39);
+  -webkit-box-shadow: 0 0 0 1000px white inset;
+  caret-color: rgb(17 24 39);
+  transition: background-color 5000s ease-in-out 0s;
+}
+.dark input:-webkit-autofill,
+.dark input:-webkit-autofill:hover,
+.dark input:-webkit-autofill:focus,
+.dark input:-webkit-autofill:active {
+  -webkit-text-fill-color: #dcddde;
+  -webkit-box-shadow: 0 0 0 1000px #262626 inset;
+  caret-color: #dcddde;
+}
+
+/* ────────────────────────────────────────────────────────────────────
+   SKELETON LOADERS — subtle shimmer
+   ──────────────────────────────────────────────────────────────────── */
+
+.skeleton {
+  background: linear-gradient(90deg, rgba(0,0,0,0.04) 0%, rgba(0,0,0,0.08) 50%, rgba(0,0,0,0.04) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+.dark .skeleton {
+  background: linear-gradient(90deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.09) 50%, rgba(255,255,255,0.04) 100%);
+  background-size: 200% 100%;
+}
+
+@keyframes shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ────────────────────────────────────────────────────────────────────
+   DARK MODE BLANKET OVERRIDES — coverage for pages still on legacy classes.
+   Long-term goal: replace these with proper dark: variants everywhere.
+   Tuned to Obsidian palette (#1e1e1e canvas, #262626 panel).
+   ──────────────────────────────────────────────────────────────────── */
+
+.dark .bg-white         { background-color: #262626; }   /* panel */
+.dark .bg-gray-50       { background-color: #1e1e1e; }   /* canvas */
+.dark .bg-gray-100      { background-color: #2c2c2c; }   /* raised */
+.dark .border-gray-200  { border-color: #2f2f2f; }
+.dark .border-gray-100  { border-color: #2a2a2a; }
+.dark .border-gray-300  { border-color: #3a3a3a; }
+.dark .text-gray-900    { color: #ececec; }
+.dark .text-gray-800    { color: #dcddde; }
+.dark .text-gray-700    { color: #c8c8c8; }
+.dark .text-gray-600    { color: #a3a3a3; }
+.dark .text-gray-500    { color: #999999; }
+.dark .text-gray-400    { color: #737373; }
+.dark .text-gray-300    { color: #5a5a5a; }
+.dark .hover\:bg-gray-50:hover  { background-color: #2c2c2c; }
+.dark .hover\:bg-gray-100:hover { background-color: #2c2c2c; }
+
+/* ────────────────────────────────────────────────────────────────────
+   MOTION UTILITIES
+   ──────────────────────────────────────────────────────────────────── */
+
+/* Smooth lift used on interactive cards/buttons */
+.hover-lift {
+  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.18s ease;
+}
+.hover-lift:hover {
+  transform: translateY(-1px);
+}
+
+/*
+ * Stagger entrance: apply to a parent, every direct child fades in with
+ * an offset so a row of cards reveals as a wave instead of a snap.
+ *
+ *   <div class="stagger-fade">
+ *     <Card />  <Card />  <Card />
+ *   </div>
+ */
+.stagger-fade > * {
+  opacity: 0;
+  animation: stagger-in 0.42s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+.stagger-fade > *:nth-child(1)  { animation-delay: 0.02s; }
+.stagger-fade > *:nth-child(2)  { animation-delay: 0.06s; }
+.stagger-fade > *:nth-child(3)  { animation-delay: 0.10s; }
+.stagger-fade > *:nth-child(4)  { animation-delay: 0.14s; }
+.stagger-fade > *:nth-child(5)  { animation-delay: 0.18s; }
+.stagger-fade > *:nth-child(6)  { animation-delay: 0.22s; }
+.stagger-fade > *:nth-child(7)  { animation-delay: 0.26s; }
+.stagger-fade > *:nth-child(8)  { animation-delay: 0.30s; }
+.stagger-fade > *:nth-child(n+9) { animation-delay: 0.34s; }
+
+@keyframes stagger-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Respect motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ────────────────────────────────────────────────────────────────────
+   SEMANTIC SURFACE CLASSES — readable shorthand for Obsidian layers
+   ──────────────────────────────────────────────────────────────────── */
+
+/* Use on cards/panels that want the canonical "raised surface" treatment */
+.surface         { background-color: #ffffff; border: 1px solid #e5e7eb; }
+.surface-raised  { background-color: #ffffff; border: 1px solid #e5e7eb; }
+.surface-sunken  { background-color: #f9fafb; border: 1px solid #e5e7eb; }
+.dark .surface         { background-color: #262626; border-color: #2f2f2f; }
+.dark .surface-raised  { background-color: #2c2c2c; border-color: #3a3a3a; }
+.dark .surface-sunken  { background-color: #181818; border-color: #2f2f2f; }
+
+/* Subtle horizontal divider (replaces border-t/border-b for "in-card" splits) */
+.divider       { border-top: 1px solid #f3f4f6; }
+.dark .divider { border-top-color: #2f2f2f; }
