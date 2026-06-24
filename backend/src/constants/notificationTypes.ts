@@ -36,8 +36,6 @@ export const NOTIFICATION_CATEGORIES = {
   project_membership: { label: 'Project membership', description: 'Adds, removes, role changes, project deletions.' },
   milestones: { label: 'Milestones', description: 'Completion, deletion, and upcoming due-dates.' },
   sprints: { label: 'Sprints', description: 'Sprint start, completion, and carried-over tasks.' },
-  timesheets: { label: 'Timesheets', description: 'Submissions awaiting your approval, approvals + rejections of yours.' },
-  leads: { label: 'Leads', description: 'New form submissions ingested from external websites.' },
 } as const;
 
 export type NotificationCategory = keyof typeof NOTIFICATION_CATEGORIES;
@@ -94,13 +92,7 @@ export const NOTIFICATION_TYPES: readonly NotificationTypeMeta[] = [
   { type: 'sprint_started', label: 'Sprint started', description: 'When a sprint kicks off in your project.', category: 'sprints' },
   { type: 'sprint_completed', label: 'Sprint completed', description: 'When a sprint wraps up in your project.', category: 'sprints' },
 
-  // ── Timesheets ───────────────────────────────────────────────────
-  { type: 'timesheet_submitted', label: 'Timesheet submitted (for approvers)', description: 'When an engineer on your team submits their week for approval.', category: 'timesheets' },
-  { type: 'timesheet_approved', label: 'My timesheet approved', description: 'When your manager approves your week.', category: 'timesheets' },
-  { type: 'timesheet_rejected', label: 'My timesheet rejected', description: 'When your manager rejects your week with feedback.', category: 'timesheets' },
-
   // ── Leads ────────────────────────────────────────────────────────
-  { type: 'lead_ingested', label: 'New lead submitted', description: 'When a website form submission lands as a new lead in one of your projects.', category: 'leads' },
 ];
 
 export const KNOWN_NOTIFICATION_TYPES: ReadonlySet<string> = new Set(

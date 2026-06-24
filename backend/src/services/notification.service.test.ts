@@ -36,9 +36,6 @@ import {
   notifySprintStarted,
   notifySprintCompleted,
   notifyTaskCarriedOver,
-  notifyTimesheetSubmitted,
-  notifyTimesheetApproved,
-  notifyTimesheetRejected,
   markAsRead,
   markAllAsRead,
   deleteNotification,
@@ -721,113 +718,6 @@ describe('notifyTaskCarriedOver — task moved to next sprint or backlog', () =>
     expect(prismaMock.notification.create).not.toHaveBeenCalled();
   });
 });
-
-// ─── notifyTimesheetSubmitted / Approved / Rejected (this PR) ───────────
-
-describe('notifyTimesheetSubmitted — approver fan-out + submitter-excluded', () => {
-  it('notifies every active ADMIN/PM/SUPER_ADMIN except the submitter', async () => {
-    prismaMock.user.findMany.mockResolvedValue([
-      { id: 'pm-1' },
-      { id: 'admin-1' },
-    ] as any);
-
-    await notifyTimesheetSubmitted({
-      timesheetId: 'tw-1',
-      submittedBy: 'eng-1',
-      submittedByName: 'Vikram',
-      weekStart: '2026-05-11',
-      totalHours: 40,
-    });
-
-    // Verify the user-lookup excluded the submitter at the query
-    // level (cheaper than filtering in JS).
-    const userQuery = prismaMock.user.findMany.mock.calls[0]?.[0] as any;
-    expect(userQuery.where.id).toEqual({ not: 'eng-1' });
-    expect(userQuery.where.role.in).toEqual(['ADMIN', 'PRODUCT_MANAGER', 'SUPER_ADMIN']);
-    expect(userQuery.where.isActive).toBe(true);
-
-    const call = prismaMock.notification.createMany.mock.calls[0]?.[0] as any;
-    expect(call.data.map((d: any) => d.userId).sort()).toEqual(['admin-1', 'pm-1']);
-  });
-
-  it('SKIPS createMany when there are no eligible approvers', async () => {
-    prismaMock.user.findMany.mockResolvedValue([] as any);
-
-    await notifyTimesheetSubmitted({
-      timesheetId: 'tw-1',
-      submittedBy: 'eng-1',
-      submittedByName: 'Vikram',
-      weekStart: '2026-05-11',
-      totalHours: 40,
-    });
-
-    expect(prismaMock.notification.createMany).not.toHaveBeenCalled();
-  });
-
-  it('inlines the hours (formatted to 1 decimal) + week in the body', async () => {
-    prismaMock.user.findMany.mockResolvedValue([{ id: 'pm-1' }] as any);
-
-    await notifyTimesheetSubmitted({
-      timesheetId: 'tw-1',
-      submittedBy: 'eng-1',
-      submittedByName: 'Vikram',
-      weekStart: '2026-05-11',
-      totalHours: 40.5,
-    });
-
-    const call = prismaMock.notification.createMany.mock.calls[0]?.[0] as any;
-    expect(call.data[0].body).toContain('Vikram submitted 40.5 hours');
-    expect(call.data[0].body).toContain('week of 2026-05-11');
-  });
-});
-
-describe('notifyTimesheetApproved — single recipient (submitter)', () => {
-  it('writes a notification to the submitter with the approver name + hours', async () => {
-    await notifyTimesheetApproved({
-      submitterUserId: 'eng-1',
-      approverName: 'Maya',
-      weekStart: '2026-05-11',
-      totalHours: 40,
-    });
-
-    expect(prismaMock.notification.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        userId: 'eng-1',
-        type: 'timesheet_approved',
-        title: 'Timesheet approved',
-      }),
-    });
-    const call = prismaMock.notification.create.mock.calls[0]?.[0] as any;
-    expect(call.data.body).toContain('Maya approved your 40.0 hours');
-  });
-});
-
-describe('notifyTimesheetRejected — REASON inlined in body (closes the loop)', () => {
-  it('surfaces the rejection reason directly in the notification body', async () => {
-    // The pivotal UX fix — pre-2026-05-15 the reason was captured
-    // on the row but never surfaced. Now the next-action signal is
-    // visible from the lock screen / mobile preview.
-    await notifyTimesheetRejected({
-      submitterUserId: 'eng-1',
-      approverName: 'Maya',
-      weekStart: '2026-05-11',
-      reason: 'Friday hours seem high — please double-check',
-    });
-
-    const call = prismaMock.notification.create.mock.calls[0]?.[0] as any;
-    expect(call.data).toMatchObject({
-      userId: 'eng-1',
-      type: 'timesheet_rejected',
-      title: 'Timesheet needs revision',
-    });
-    expect(call.data.body).toContain('Maya rejected your week of 2026-05-11');
-    expect(call.data.body).toContain('Friday hours seem high');
-  });
-});
-
-// ─── markAsRead / markAllAsRead / deleteNotification —
-//     receiver-side fixes (2026-05-15 notification-subsystem audit) ─────
-
 describe('markAsRead — userId-scoped updateMany + count surfacing', () => {
   it('returns { updated: 1 } when the notification exists AND belongs to the caller', async () => {
     prismaMock.notification.updateMany.mockResolvedValue({ count: 1 } as any);

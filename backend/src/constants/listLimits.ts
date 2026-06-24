@@ -34,9 +34,3 @@ export const LIST_QUERY_CAP = 1000;
 // cap keeps the start of the thread; a thread exceeding 1000 comments is
 // pathological and degraded display beats unbounded memory.
 export const COMMENT_LIST_CAP = 1000;
-
-// Public CMS taxonomy aggregation (tag/category/author cloud) scans
-// published posts to build its facets. Public (API-key) endpoint, so the
-// highest-exposure scan. We aggregate over the most-recent N posts, which
-// is accurate for any realistic content volume while bounding the scan.
-export const CMS_TAXONOMY_SCAN_CAP = 5000;

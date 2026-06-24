@@ -44,7 +44,6 @@ const envSchema = z.object({
     (v) => !isProd || (v && !v.includes('localhost') && !v.includes('127.0.0.1')),
     'CORS_ORIGIN must be set explicitly in production (got localhost default). Set to your Vercel URL(s), comma-separated.',
   ),
-  CMS_PUBLIC_BASE_URL: z.string().url().optional(),
   // Public URL of THIS backend, used by Helmet CSP connect-src so the
   // browser allows the SPA to talk to us (QA finding H-C2). In dev the
   // FE talks to localhost so we don't need to set this. In prod, the
@@ -108,15 +107,6 @@ const envSchema = z.object({
   // assets (videos, datasets) should use a separate storage path — this
   // bucket is for human-readable project context, not media.
   DOCUMENTS_MAX_BYTES: z.coerce.number().int().min(1024).default(52_428_800),
-
-  // ─── Pulse GitHub webhook (Wave 3, PR #33) ───
-  // Shared secret with the GitHub App / org-level webhook used for the
-  // CODE productivity signal. Unset = endpoint returns 401 for every
-  // request (HMAC verifies against a placeholder GitHub will never
-  // match). To enable: generate a 64+ char hex secret, set on Railway
-  // service env, paste into the GitHub App webhook settings. See
-  // docs/pulse/04-productivity-scoring.md.
-  PULSE_GITHUB_WEBHOOK_SECRET: z.string().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);
