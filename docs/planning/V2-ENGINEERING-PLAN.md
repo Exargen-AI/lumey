@@ -1,5 +1,12 @@
 # Lumey v2.0 — Detailed Engineering Plan
 
+> **⛳ Superseded on the runtime/SDK question.** This plan's §1 and §5 argue for
+> *standing on the Claude Agent SDK*. The founder decision is to **build the
+> agent runtime and SDK in-house, from scratch — no external agent SDK.** The
+> `RuntimeAdapter` firewall is retained; everything else about the runtime is
+> ours. See [`docs/architecture/in-house-sdk-and-runtime.md`](../architecture/in-house-sdk-and-runtime.md).
+> The token-efficiency, guardrails, and feasibility sections below still hold.
+
 **Companion to `ARCHITECTURE.md`.** That doc is the *what* and *why* (modular pillars,
 diagrams, roadmap). This is the *how* and *can-we-actually-do-it* — the engineering
 substance behind strong coding agents, low/efficient token usage, a top-notch SDK,

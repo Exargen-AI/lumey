@@ -126,6 +126,8 @@ rejects non-agents, fails fast on missing task / unknown adapter.
 
 ## Next (M2.3+)
 
-A real runtime adapter (Claude Agent SDK behind the seam) that does actual work
-in a sandbox, plus the write API (start-run route + permissions) and the
-frontend live-trace view on the kanban card.
+Our **in-house `native` runtime** behind the seam (built from scratch — model
+client, tool runner, sandbox, context engine; **no external agent SDK**), plus
+the write API (start-run route + permissions) and the frontend live-trace view
+on the kanban card. Full build plan:
+[`docs/architecture/in-house-sdk-and-runtime.md`](../architecture/in-house-sdk-and-runtime.md).

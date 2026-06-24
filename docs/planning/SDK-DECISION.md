@@ -1,7 +1,22 @@
 # Lumey v2.0 — SDK / Runtime Decision (CTO review)
 
-**Status: recommendation on the table, founder to decide.** Captures the CTO-level
-review of the agent-runtime and SDK strategy from `V2-ENGINEERING-PLAN.md §1, §5`.
+> ## ⛳ FOUNDER DECISION (supersedes the recommendation below)
+>
+> **Build everything in-house, from scratch — no external agent SDK or hosted
+> runtime.** Lumey owns both the agent runtime *and* the platform SDK. We still
+> call models (local + frontier), but all orchestration, tool execution,
+> sandboxing, context management, and the SDK surface are ours.
+>
+> The one thing kept from the CTO review is the **`RuntimeAdapter` firewall** —
+> it's exactly what makes building in-house low-risk: our runtime is just the
+> first *real* adapter behind it. The "buy the loop" recommendation below is
+> **not adopted**.
+>
+> **Full technical build plan:**
+> [`docs/architecture/in-house-sdk-and-runtime.md`](../architecture/in-house-sdk-and-runtime.md).
+
+**Status: superseded — kept for the rationale + the firewall design.** Captures
+the CTO-level review of the agent-runtime and SDK strategy.
 
 ---
 
