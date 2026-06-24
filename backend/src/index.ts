@@ -26,7 +26,6 @@ import decisionRoutes from './routes/decision.routes';
 import projectAckRoutes from './routes/projectAcknowledgment.routes';
 import deliverableRoutes from './routes/deliverable.routes';
 import projectDocumentRoutes from './routes/projectDocument.routes';
-import commentRoutes from './routes/comment.routes';
 import statusUpdateRoutes from './routes/statusUpdate.routes';
 import userRoutes from './routes/user.routes';
 import activityRoutes from './routes/activity.routes';
@@ -46,7 +45,18 @@ import currentSprintRoutes from './routes/currentSprint.routes';
 import todayRoutes from './routes/today.routes';
 import openapiRoutes from './routes/openapi.routes';
 
+import { ModuleRegistry, ConfigEntitlements } from './kernel';
+import { commentsModule } from './modules/comments';
+
 const app = express();
+
+// ── Kernel: capability modules ──────────────────────────────────────────
+// Modules register here and are mounted by entitlement, in dependency order.
+// M0 migrates `comments` as the first module; the rest follow incrementally.
+// `mount` is synchronous (slots into the route section below); `boot` runs
+// each module's init hook during bootstrap, before the listener opens.
+const registry = new ModuleRegistry(new ConfigEntitlements());
+registry.register(commentsModule);
 
 // Middleware stack — Security hardened
 //
@@ -185,7 +195,9 @@ app.use('/api/v1', decisionRoutes);
 app.use('/api/v1', projectAckRoutes);
 app.use('/api/v1', deliverableRoutes);
 app.use('/api/v1', projectDocumentRoutes);
-app.use('/api/v1', commentRoutes);
+// Kernel-managed capability modules (M0: comments). Mounted in dependency
+// order, gated by entitlement.
+registry.mount(app);
 app.use('/api/v1', statusUpdateRoutes);
 app.use('/api/v1/users', userRoutes);
 app.use('/api/v1', activityRoutes);
@@ -262,6 +274,11 @@ async function bootstrap() {
   } catch (err) {
     logger.warn({ err }, 'agent user seed failed (non-fatal)');
   }
+
+  // Boot capability modules (init hooks / event subscriptions) before the
+  // listener opens, so subscriptions are live before the first request.
+  await registry.boot();
+  logger.info({ modules: registry.enabledModuleIds() }, 'kernel modules enabled');
 
   server = app.listen(env.PORT, () => {
     logger.info({ port: env.PORT, env: env.NODE_ENV }, 'server listening');

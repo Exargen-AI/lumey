@@ -36,6 +36,11 @@ const envSchema = z.object({
   // Structured-logger verbosity (pino). Defaults to info in prod, debug
   // in dev (resolved in lib/logger.ts when unset).
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).optional(),
+  // Kernel module entitlements (day-one, config-based). Comma-separated
+  // module ids to DISABLE; every registered module is enabled by default.
+  // A tenant-scoped, DB-backed entitlement source replaces this when
+  // multi-tenant mounting lands. See docs/modules/KERNEL.md.
+  LUMEY_DISABLED_MODULES: z.string().optional(),
   // CORS_ORIGIN: comma-separated allowlist. In production we REFUSE the
   // localhost default — an unset CORS_ORIGIN in prod would silently
   // accept localhost requests (and reject Vercel's URL). Fail-closed
