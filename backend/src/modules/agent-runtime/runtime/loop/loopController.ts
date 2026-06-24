@@ -58,6 +58,8 @@ const DEFAULT_BUDGET = { maxSteps: 20, maxTokens: 200_000 } as const;
 /** Map a tool name to the run-step type that best describes it on the trace. */
 function stepTypeForTool(name: string, args: string): RunStepType {
   if (name === 'write_file' || name === 'edit_file') return RunStepType.EDIT;
+  if (name === 'run_tests') return RunStepType.TEST;
+  if (name === 'git_commit') return RunStepType.COMMAND;
   if (name === 'bash') return /\b(test|vitest|jest|spec)\b/.test(args) ? RunStepType.TEST : RunStepType.COMMAND;
   return RunStepType.TOOL_CALL;
 }

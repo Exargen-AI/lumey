@@ -369,12 +369,44 @@ test-command step classification; model-error→FAILED; step-ceiling and
 token-budget hand-offs; cooperative cancel; adapter wiring + no-model→FAILED +
 cancel; and `modelClientFromEnv` local/frontier resolution.
 
-## Next — beyond M2.7
+## M2.8 — finalize tools + repo-aware workspace (it works on real code)
 
-The runtime now executes. What's next layers on top of the same seam: **real
-repo workspaces** (worktree from the project's git URL), **background
-execution** (so long runs don't block the request), the **finalize tools**
-(`run_tests`, `open_pr` + git telemetry), then **memory** and **Outcomes**
-grading. And **Part B — the Lumey Platform SDK** (schema-first TS + Python
-codegen). Full build plan:
+The native runtime now operates on an actual repo and completes the loop:
+verify, then prepare for review. Code: `runtime/tools/finalize.ts` +
+`adapters/native.ts`.
+
+- **Repo-aware workspace** — when `LUMEY_RUN_REPO_PATH` is set, a run gets a git
+  **worktree** of that repo (real code, real tests, a real branch); otherwise a
+  temp dir. An env bridge until per-project git config lands.
+- **`run_tests`** — runs the project test suite (default from `LUMEY_TEST_CMD`,
+  or a model override) and reports `PASS`/`FAIL`/`TIMEOUT` with output. The
+  (overridable) command passes the same guardrail as `bash`.
+- **`git_commit`** — stages all changes and commits them onto a per-run branch
+  (`lumey/run-<runId>`), returning the sha. Off a git repo, or with nothing to
+  commit, it returns `ok:false` (errors-as-data) rather than throwing.
+
+The loop classifies these on the trace (`run_tests → TEST`, `git_commit →
+COMMAND`). The native adapter binds them per run (the commit branch is named for
+the run) alongside the six coding tools.
+
+**Scope (MoSCoW):** Must ✅ (run_tests + git_commit, guardrailed, errors-as-data;
+repo-aware workspace; loop step-typing; tests) · Should ✅ (per-run branch;
+model-overridable test command; non-git/empty-commit graceful paths) · Won't
+this increment (pushing the branch + opening a real PR on a remote — needs git
+auth/remote config; per-project repo settings replacing the env bridge;
+background execution).
+
+**Tests** (6 unit + a full-flow e2e): run_tests PASS/FAIL/guardrail-block;
+git_commit onto a branch / nothing-to-commit / non-git; and an **end-to-end run
+over a real git worktree** where the agent writes code → runs tests → commits to
+`lumey/run-e2e` → requests review, asserting the commit actually landed on the
+branch and the trace shows EDIT → TEST → COMMAND → REVIEW_REQUEST.
+
+## Next — beyond M2.8
+
+On the same seam: **open a real PR** (push the run branch + create the PR via git
+telemetry — needs remote/auth), **per-project repo config** (replace the env
+bridge), **background execution** (long runs don't block the request), then
+**memory** and **Outcomes** grading. And **Part B — the Lumey Platform SDK**
+(schema-first TS + Python codegen). Full build plan:
 [`docs/architecture/in-house-sdk-and-runtime.md`](../architecture/in-house-sdk-and-runtime.md).

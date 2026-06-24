@@ -28,6 +28,7 @@ import { ContextEngine } from '../runtime/context/contextEngine';
 import { buildSystemPrompt } from '../runtime/context/systemPrompt';
 import { ToolRunner } from '../runtime/tools/toolRunner';
 import { defaultTools } from '../runtime/tools/builtins';
+import { createRunTestsTool, createGitCommitTool } from '../runtime/tools/finalize';
 import { modelClientFromEnv } from '../runtime/model/factory';
 import type { ModelClient, ChatMessage } from '../runtime/model/types';
 import type { Sandbox } from '../runtime/sandbox/sandbox';
@@ -63,6 +64,27 @@ async function tempDirSandbox(): Promise<Sandbox> {
   return WorktreeSandbox.forDir(dir, { owned: true });
 }
 
+/**
+ * The default workspace: a git **worktree** of a configured repo when
+ * `LUMEY_RUN_REPO_PATH` is set (so the agent runs on real code, runs its tests,
+ * and commits to a run branch), else a fresh temp dir. A proper per-project repo
+ * config replaces the env bridge when project git settings land.
+ */
+async function repoAwareSandbox(): Promise<Sandbox> {
+  const repoPath = process.env.LUMEY_RUN_REPO_PATH;
+  if (repoPath) return WorktreeSandbox.create({ repoPath, ref: process.env.LUMEY_RUN_REF });
+  return tempDirSandbox();
+}
+
+/** The default toolset for a run: the coding tools plus run-scoped finalize tools. */
+function defaultRunTools(ctx: RunContext): ToolRunner {
+  return new ToolRunner([
+    ...defaultTools(),
+    createRunTestsTool({ command: process.env.LUMEY_TEST_CMD }),
+    createGitCommitTool({ branch: `lumey/run-${ctx.runId}` }),
+  ]);
+}
+
 /** A model-backed compaction summarizer for the ContextEngine. */
 function modelSummarizer(model: ModelClient): (older: ChatMessage[]) => Promise<string> {
   return async (older) => {
@@ -95,8 +117,8 @@ export function createNativeAdapter(deps: NativeAdapterDeps): RuntimeAdapter {
       let sandbox: Sandbox | undefined;
       try {
         const model = deps.modelFactory(); // throws if no model configured
-        sandbox = await (deps.sandboxFactory ?? tempDirSandbox)(ctx);
-        const tools = (deps.toolsFactory ?? (() => new ToolRunner(defaultTools())))();
+        sandbox = await (deps.sandboxFactory ?? repoAwareSandbox)(ctx);
+        const tools = deps.toolsFactory ? deps.toolsFactory() : defaultRunTools(ctx);
         const context = new ContextEngine(buildSystemPrompt(ctx, tools.list()), { summarize: modelSummarizer(model) });
         const loop = new LoopController({
           model,

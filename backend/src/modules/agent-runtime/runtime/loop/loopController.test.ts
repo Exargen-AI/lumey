@@ -2,12 +2,14 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { promises as fs } from 'fs';
 import os from 'os';
 import path from 'path';
+import { spawn } from 'child_process';
 import { RunStatus, RunStepType } from '@prisma/client';
 import { LoopController, type RunRecorder } from './loopController';
 import { ContextEngine } from '../context/contextEngine';
 import { buildSystemPrompt } from '../context/systemPrompt';
 import { ToolRunner } from '../tools/toolRunner';
 import { defaultTools } from '../tools/builtins';
+import { createRunTestsTool, createGitCommitTool } from '../tools/finalize';
 import { WorktreeSandbox } from '../sandbox/worktreeSandbox';
 import type { ModelClient, ModelResponse, CompletionRequest, ModelToolCall } from '../model/types';
 import type { RunContext } from '../../runtimeAdapter';
@@ -180,5 +182,63 @@ describe('LoopController safety rails', () => {
     const outcome = await new LoopController({ model, tools, context: engine(), sandbox, recorder, signal: ac.signal }).run();
     expect(outcome.status).toBe(RunStatus.CANCELLED);
     expect(recorder.transitions.map((t) => t.to)).toEqual([RunStatus.RUNNING, RunStatus.CANCELLED]);
+  });
+});
+
+// ── the full agent flow over a real git repo ─────────────────────────────────
+
+function git(cwd: string, args: string[]): Promise<{ code: number | null; out: string }> {
+  return new Promise((resolve, reject) => {
+    const c = spawn('git', args, { cwd });
+    let out = '';
+    c.stdout?.on('data', (d) => (out += d.toString()));
+    c.on('error', reject);
+    c.on('close', (code) => resolve({ code, out }));
+  });
+}
+
+describe('LoopController — full agent flow over a real git worktree', () => {
+  it('writes code, runs tests, commits to a run branch, and requests review', async () => {
+    const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'lumey-e2e-repo-'));
+    let sb: WorktreeSandbox | undefined;
+    try {
+      await git(repo, ['init', '-q']);
+      await git(repo, ['config', 'user.email', 't@t.t']);
+      await git(repo, ['config', 'user.name', 'T']);
+      await fs.writeFile(path.join(repo, 'README.md'), '# proj\n');
+      await git(repo, ['add', '.']);
+      await git(repo, ['commit', '-qm', 'init']);
+
+      sb = await WorktreeSandbox.create({ repoPath: repo });
+      const runTools = new ToolRunner([
+        ...defaultTools(),
+        createRunTestsTool({ command: `${process.execPath} -e "process.exit(0)"` }),
+        createGitCommitTool({ branch: 'lumey/run-e2e' }),
+      ]);
+      const model = new ScriptedModel([
+        callTool('c1', 'write_file', '{"path":"feature.js","content":"module.exports = 1;"}'),
+        callTool('c2', 'run_tests', '{}'),
+        callTool('c3', 'git_commit', '{"message":"add feature"}'),
+        say('Implemented and committed; please review.'),
+      ]);
+      const recorder = new FakeRecorder();
+      const ctxEngine = new ContextEngine(buildSystemPrompt(CTX, runTools.list()));
+
+      const outcome = await new LoopController({ model, tools: runTools, context: ctxEngine, sandbox: sb, recorder }).run();
+
+      expect(outcome.status).toBe(RunStatus.AWAITING_REVIEW);
+      // the commit landed on the run branch inside the worktree
+      const log = await git(sb.root, ['log', '--oneline', '-1', 'lumey/run-e2e']);
+      expect(log.out).toContain('add feature');
+      // the trace shows write → test → commit → review
+      const types = recorder.steps.map((s) => s.type);
+      expect(types).toContain(RunStepType.EDIT);
+      expect(types).toContain(RunStepType.TEST);
+      expect(types).toContain(RunStepType.COMMAND); // git_commit
+      expect(types).toContain(RunStepType.REVIEW_REQUEST);
+    } finally {
+      if (sb) await sb.dispose();
+      await fs.rm(repo, { recursive: true, force: true });
+    }
   });
 });
