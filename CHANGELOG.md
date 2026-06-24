@@ -74,7 +74,10 @@ covering the UI throughout.
 - **M2.16 — cross-run memory** ✅ `9705890` — the runtime recalls prior project
   learnings into a stable context preamble and records run summaries;
   `capabilities().memory = true`.
-- **M2.17 — Outcomes** ⏳ — rubric-graded iterate → grade → revise loop.
+- **M2.17 — Outcomes** ✅ — the agent grades its result vs the acceptance
+  criteria and revises before requesting review (bounded by `maxRevisions`);
+  `capabilities().outcomes = true`. Native caps now: self-hosted ✓ · memory ✓ ·
+  outcomes ✓ (multi-agent ⏳).
 
 ## Part B — the Platform SDK (in-house, schema-first)
 
@@ -92,5 +95,5 @@ TypeScript *and* generated Python, with a drift guard.
 
 ## Health (current)
 
-1091 backend tests + 39 SDK tests green · typecheck clean (backend + frontend +
+1094 backend tests + 39 SDK tests green · typecheck clean (backend + frontend +
 sdk) · zero dead exports · green at every commit.

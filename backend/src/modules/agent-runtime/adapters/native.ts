@@ -23,7 +23,7 @@ import prisma from '../../../config/database';
 import { appendStep, transitionRun, recordUsage } from '../../../services/agentRun.service';
 import { isTerminal } from '../../../lib/runLifecycle';
 import type { RuntimeAdapter, RunContext } from '../runtimeAdapter';
-import { LoopController, type LoopBudget, type RunRecorder } from '../runtime/loop/loopController';
+import { LoopController, type LoopBudget, type RunRecorder, type Grader } from '../runtime/loop/loopController';
 import { ContextEngine } from '../runtime/context/contextEngine';
 import { buildSystemPrompt } from '../runtime/context/systemPrompt';
 import { ToolRunner } from '../runtime/tools/toolRunner';
@@ -178,6 +178,45 @@ async function memoryPreamble(projectId: string): Promise<ChatMessage[]> {
   return [{ role: 'system', content: `Learnings from prior runs on this project (most recent first):\n${body}` }];
 }
 
+/** Render acceptance criteria as a checklist for the grader prompt. */
+function renderCriteria(raw: RunContext['task']['acceptanceCriteria']): string {
+  if (Array.isArray(raw)) {
+    return raw
+      .map((c) => (typeof c === 'string' ? c : typeof c === 'object' && c && 'text' in c ? String((c as { text: unknown }).text) : JSON.stringify(c)))
+      .filter(Boolean)
+      .map((c) => `- ${c}`)
+      .join('\n');
+  }
+  return raw == null ? '' : `- ${typeof raw === 'string' ? raw : JSON.stringify(raw)}`;
+}
+
+function hasAcceptanceCriteria(raw: RunContext['task']['acceptanceCriteria']): boolean {
+  return Array.isArray(raw) ? raw.length > 0 : raw != null;
+}
+
+/**
+ * A model-backed Outcomes grader: judge the agent's final result against the
+ * task's acceptance criteria. Replies `PASS`/`FAIL` + reason; the loop revises on
+ * FAIL. A grader error degrades to "pass" so a flaky judge never blocks a run.
+ */
+function modelGrader(model: ModelClient, ctx: RunContext): Grader {
+  const criteria = renderCriteria(ctx.task.acceptanceCriteria);
+  return async (finalAnswer) => {
+    try {
+      const res = await model.complete({
+        messages: [
+          { role: 'system', content: 'You are a strict reviewer. Decide whether the agent\'s result satisfies EVERY acceptance criterion. Reply with a single line starting with PASS or FAIL, then a brief reason.' },
+          { role: 'user', content: `Acceptance criteria:\n${criteria}\n\nAgent's final result:\n${finalAnswer}` },
+        ],
+      });
+      const text = res.content.trim();
+      return { passed: /^\s*pass\b/i.test(text), feedback: text || 'no grader feedback' };
+    } catch {
+      return { passed: true, feedback: 'grader unavailable — passed by default' };
+    }
+  };
+}
+
 /** A model-backed compaction summarizer for the ContextEngine. */
 function modelSummarizer(model: ModelClient): (older: ChatMessage[]) => Promise<string> {
   return async (older) => {
@@ -200,7 +239,7 @@ export function createNativeAdapter(deps: NativeAdapterDeps): RuntimeAdapter {
     capabilities: () => ({
       selfHosted: true, // runs anywhere this process runs, including air-gapped
       memory: true, // recalls + records cross-run project memory
-      outcomes: false, // rubric-graded iterate→grade loop is a later milestone
+      outcomes: true, // grades the result vs acceptance criteria and revises
       multiAgent: false, // single-agent loop for now
     }),
 
@@ -223,6 +262,8 @@ export function createNativeAdapter(deps: NativeAdapterDeps): RuntimeAdapter {
           recorder: serviceRecorder(ctx.runId),
           budget: deps.budget,
           signal: controller.signal,
+          // Outcomes: grade the result vs acceptance criteria and revise on fail.
+          grader: hasAcceptanceCriteria(ctx.task.acceptanceCriteria) ? modelGrader(model, ctx) : undefined,
         });
         const outcome = await loop.run();
         // Persist what this run learned so future runs on the project recall it.

@@ -647,9 +647,44 @@ a memory-management UI; agent-authored explicit memories beyond the run summary)
 `projectIdForTask`; ContextEngine inserts the preamble after the system prompt
 and keeps it across compaction.
 
-## Next — beyond M2.16
+## M2.17 — Outcomes (grade → revise before asking for review)
 
-**Outcomes** — a rubric-graded iterate→grade→revise loop (the agent grades its
-own work against the acceptance criteria and revises before requesting review),
-flipping the runtime's last capability flag. Full build plan:
+The runtime's `outcomes` capability turns on: when the agent thinks it's done,
+it **grades its own result against the task's acceptance criteria** and, on a
+fail, **revises** — only parking at `AWAITING_REVIEW` once it passes or the
+revision budget is spent. Code: `runtime/loop/loopController.ts` +
+`adapters/native.ts`.
+
+- **`Grader` seam** — `(finalAnswer, transcript) → { passed, feedback }`,
+  injected by the adapter (which holds the criteria), so the loop stays
+  criteria-agnostic.
+- **Loop behaviour** — on a no-tool-call turn: grade → record a `TEST` step
+  (pass/revise); if failed and revisions remain, append the feedback as a user
+  message and **continue the loop**; otherwise finish (with a "handed to human
+  after N revision attempt(s)" note when the budget is exhausted).
+  `maxRevisions` default 2; the step ceiling still bounds the total.
+- **Native grader** — a model judge prompted to reply `PASS`/`FAIL` + reason
+  against the rendered acceptance criteria; only enabled when the task *has*
+  criteria, and degrades to "pass" on a grader error so a flaky judge never
+  blocks a run. `capabilities().outcomes = true`.
+
+**Scope (MoSCoW):** Must ✅ (grader seam; grade→revise loop with a bounded
+budget; native model-grader gated on criteria; capability flag; tests) · Should
+✅ (trace step per grade; graceful "hand to human" on exhaustion; fail-open on
+grader error) · Won't this increment (a structured multi-criterion rubric score;
+grading against test results / diffs rather than the final message; learned
+acceptance thresholds).
+
+**Tests:** passes-first-try finishes; failed-grade revises then passes (feedback
+threaded, one `revise` + one `pass` step); exhausting `maxRevisions` hands off to
+a human.
+
+With M2.17 the `native` runtime's capabilities read **self-hosted ✓ · memory ✓ ·
+outcomes ✓** (only multi-agent remains).
+
+## Next — beyond M2.17
+
+**Multi-agent** (sub-agent delegation / coordination — the runtime's last
+capability flag), and a real **local-model live run** (Ollama/vLLM) to exercise
+the loop end to end against an actual model. Full build plan:
 [`docs/architecture/in-house-sdk-and-runtime.md`](../architecture/in-house-sdk-and-runtime.md).

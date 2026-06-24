@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { promises as fs } from 'fs';
 import os from 'os';
 import path from 'path';
@@ -191,6 +191,48 @@ describe('LoopController safety rails', () => {
     const outcome = await new LoopController({ model, tools, context: engine(), sandbox, recorder, signal: ac.signal }).run();
     expect(outcome.status).toBe(RunStatus.CANCELLED);
     expect(recorder.transitions.map((t) => t.to)).toEqual([RunStatus.RUNNING, RunStatus.CANCELLED]);
+  });
+});
+
+describe('LoopController Outcomes (grade → revise)', () => {
+  it('passes grading on the first try and finishes', async () => {
+    const model = new ScriptedModel([say('the answer')]);
+    const recorder = new FakeRecorder();
+    const grader = vi.fn().mockResolvedValue({ passed: true, feedback: 'meets criteria' });
+
+    const outcome = await new LoopController({ model, tools, context: engine(), sandbox, recorder, grader }).run();
+
+    expect(outcome.status).toBe(RunStatus.AWAITING_REVIEW);
+    expect(outcome.summary).toContain('the answer');
+    expect(grader).toHaveBeenCalledTimes(1);
+    expect(recorder.steps.some((s) => s.type === RunStepType.TEST && s.title.includes('pass'))).toBe(true);
+  });
+
+  it('revises on a failed grade, then passes', async () => {
+    const model = new ScriptedModel([say('v1'), say('v2')]);
+    const recorder = new FakeRecorder();
+    const grades = [{ passed: false, feedback: 'missing X' }, { passed: true, feedback: 'now good' }];
+    let i = 0;
+    const grader = vi.fn(async () => grades[Math.min(i++, grades.length - 1)]);
+
+    const outcome = await new LoopController({ model, tools, context: engine(), sandbox, recorder, grader }).run();
+
+    expect(outcome.summary).toContain('v2');
+    expect(grader).toHaveBeenCalledTimes(2);
+    expect(recorder.steps.filter((s) => s.title.includes('revise')).length).toBe(1);
+    expect(recorder.steps.some((s) => s.title.includes('pass'))).toBe(true);
+  });
+
+  it('hands off to a human after exhausting the revision budget', async () => {
+    const model = new ScriptedModel([say('still wrong')]);
+    const recorder = new FakeRecorder();
+    const grader = vi.fn().mockResolvedValue({ passed: false, feedback: 'still missing X' });
+
+    const outcome = await new LoopController({ model, tools, context: engine(), sandbox, recorder, grader, maxRevisions: 1 }).run();
+
+    expect(outcome.status).toBe(RunStatus.AWAITING_REVIEW);
+    expect(outcome.summary).toMatch(/handed to human/);
+    expect(grader).toHaveBeenCalledTimes(2); // initial grade + 1 revision
   });
 });
 

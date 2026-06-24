@@ -43,6 +43,18 @@ export interface LoopBudget {
   readonly maxTokens?: number;
 }
 
+export interface OutcomeGrade {
+  readonly passed: boolean;
+  readonly feedback: string;
+}
+
+/**
+ * Grades the agent's final result against the task's done-criteria (Outcomes).
+ * Injected by the adapter (which holds the acceptance criteria); the loop stays
+ * criteria-agnostic.
+ */
+export type Grader = (finalAnswer: string, transcript: readonly ChatMessage[]) => Promise<OutcomeGrade>;
+
 export interface LoopDeps {
   readonly model: ModelClient;
   readonly tools: ToolRunner;
@@ -51,6 +63,10 @@ export interface LoopDeps {
   readonly recorder: RunRecorder;
   readonly budget?: LoopBudget;
   readonly signal?: AbortSignal;
+  /** When set, grade the final result and revise on failure (Outcomes). */
+  readonly grader?: Grader;
+  /** Max grade→revise cycles before handing off to a human. Default 2. */
+  readonly maxRevisions?: number;
 }
 
 export interface LoopOutcome {
@@ -61,6 +77,7 @@ export interface LoopOutcome {
 }
 
 const DEFAULT_BUDGET = { maxSteps: 20, maxTokens: 200_000 } as const;
+const DEFAULT_MAX_REVISIONS = 2;
 
 /** Map a tool name to the run-step type that best describes it on the trace. */
 function stepTypeForTool(name: string, args: string): RunStepType {
@@ -81,11 +98,13 @@ export class LoopController {
   private readonly d: LoopDeps;
   private readonly maxSteps: number;
   private readonly maxTokens: number;
+  private readonly maxRevisions: number;
 
   constructor(deps: LoopDeps) {
     this.d = deps;
     this.maxSteps = deps.budget?.maxSteps ?? DEFAULT_BUDGET.maxSteps;
     this.maxTokens = deps.budget?.maxTokens ?? DEFAULT_BUDGET.maxTokens;
+    this.maxRevisions = deps.maxRevisions ?? DEFAULT_MAX_REVISIONS;
   }
 
   async run(): Promise<LoopOutcome> {
@@ -93,6 +112,7 @@ export class LoopController {
     const transcript: ChatMessage[] = [];
     const usage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
     let turns = 0;
+    let revisions = 0;
 
     while (turns < this.maxSteps) {
       if (this.aborted()) return this.finishCancelled(turns, usage);
@@ -118,6 +138,26 @@ export class LoopController {
 
       // No tool calls ⇒ the model has produced its final answer / review request.
       if (response.toolCalls.length === 0) {
+        if (this.d.grader) {
+          const grade = await this.d.grader(response.content, transcript);
+          await this.d.recorder.step({
+            type: RunStepType.TEST,
+            title: `Self-grade vs acceptance criteria: ${grade.passed ? 'pass' : 'revise'}`,
+            detail: firstLine(grade.feedback, 200),
+          });
+          if (!grade.passed && revisions < this.maxRevisions) {
+            revisions++;
+            transcript.push({
+              role: 'user',
+              content: `Your result does not yet satisfy the acceptance criteria. ${grade.feedback}\nRevise the work and continue.`,
+            });
+            continue; // iterate → grade → revise
+          }
+          const summary = grade.passed
+            ? response.content || 'Run complete; awaiting human review.'
+            : `${response.content}\n\n[Outcome grading: handed to human after ${revisions} revision attempt(s) — ${firstLine(grade.feedback, 160)}]`;
+          return this.finishAwaitingReview(turns, usage, summary);
+        }
         return this.finishAwaitingReview(turns, usage, response.content || 'Run complete; awaiting human review.');
       }
 
