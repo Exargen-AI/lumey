@@ -4,6 +4,7 @@
   "private": true,
   "workspaces": [
     "shared",
+    "sdk",
     "backend",
     "frontend"
   ],
@@ -12,9 +13,10 @@
     "dev:frontend": "npm run dev --workspace=frontend",
     "build": "npm run build --workspaces",
     "build:shared": "npm run build --workspace=shared",
+    "build:sdk": "npm run build --workspace=sdk",
     "build:backend": "npm run build --workspace=backend",
     "build:frontend": "npm run build --workspace=frontend",
-    "typecheck": "npm run typecheck --workspace=backend && npm run typecheck --workspace=frontend",
+    "typecheck": "npm run typecheck --workspace=backend && npm run typecheck --workspace=frontend && npm run typecheck --workspace=sdk",
     "lint": "eslint .",
     "lint:strict": "eslint . --max-warnings 0",
     "lint:fix": "eslint . --fix",
@@ -23,7 +25,7 @@
     "dead-code": "ts-prune -p tsconfig.base.json",
     "audit:strict": "npm audit --production --audit-level=high",
     "test": "npm run test:unit",
-    "test:unit": "npm run test --workspace=backend && npm run test --workspace=frontend",
+    "test:unit": "npm run test --workspace=backend && npm run test --workspace=frontend && npm run test --workspace=sdk",
     "test:unit:coverage": "npm run test:coverage --workspace=backend && npm run test:coverage --workspace=frontend",
     "test:e2e": "npm run test:e2e --workspace=frontend",
     "test:all": "npm run typecheck && npm run lint && npm run test:unit && npm run test:e2e"

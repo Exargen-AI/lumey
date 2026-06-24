@@ -203,7 +203,8 @@ and demos until the `native` runtime catches up.
 | `ContextEngine` (assembly + caching + compaction) | ✅ M2.6 | token-efficient prompting |
 | `LoopController` → wire as the `native` adapter | ✅ M2.7 | the in-house runtime **executes** a real task end to end |
 | `GuardrailEnforcer` at the tool boundary | woven | least-privilege blast radius |
-| Lumey Platform SDK (schema → TS + Python codegen) | M2.8 | the top-notch integration SDK |
+| Lumey Platform SDK — TS core (schema → TS; JSON-Schema codegen seam) | ✅ M3.1 | the top-notch integration SDK ([`sdk/`](../../sdk/README.md)) |
+| Lumey Platform SDK — Python codegen + streaming surface | next | cross-language parity |
 
 > Nothing above the seam changes as `native` replaces `reference`. That is the
 > whole point of having built the firewall first.
