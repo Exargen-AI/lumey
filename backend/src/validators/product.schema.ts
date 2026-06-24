@@ -30,16 +30,6 @@ const iconSchema = z
   .nullable()
   .optional();
 
-export const listProductsSchema = z.object({
-  params: z.object({ id: z.string().uuid() }),
-  query: z.object({
-    // Default: include ACTIVE + PAUSED, exclude ARCHIVED. Frontend opts
-    // in to archived with `?status=ARCHIVED` for the admin "show retired
-    // products" view.
-    status: z.nativeEnum(ProductStatus).optional(),
-  }).optional(),
-});
-
 export const createProductSchema = z.object({
   params: z.object({ id: z.string().uuid() }),
   body: z.object({
