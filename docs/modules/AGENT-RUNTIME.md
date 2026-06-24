@@ -682,9 +682,51 @@ a human.
 With M2.17 the `native` runtime's capabilities read **self-hosted ✓ · memory ✓ ·
 outcomes ✓** (only multi-agent remains).
 
-## Next — beyond M2.17
+## M2.18 — multi-agent (the last capability flag)
 
-**Multi-agent** (sub-agent delegation / coordination — the runtime's last
-capability flag), and a real **local-model live run** (Ollama/vLLM) to exercise
-the loop end to end against an actual model. Full build plan:
+The lead agent can **delegate** focused sub-objectives to **worker** sub-agents
+— the **orchestrator-worker / hub-and-spoke** pattern the industry has
+converged on. Code: `runtime/tools/delegate.ts` + `runtime/loop/inMemoryRecorder.ts`
++ `adapters/native.ts`.
+
+**Grounding (we researched this one):** orchestrator-worker is the dominant,
+best-cost/quality shape; the make-or-break detail is **context isolation** — a
+flat shared context "pollutes" and steering accuracy collapses (~60%→21% as
+workers scale), so each worker must get *its own* context window; multi-agent is
+powerful but **expensive** (≈an extra full loop per delegation), so it's gated.
+Sources: orchestration survey ([arXiv 2601.13671](https://arxiv.org/pdf/2601.13671)),
+context-pollution finding ([arXiv 2604.07911](https://arxiv.org/pdf/2604.07911)).
+
+**How it's built — delegation as a tool** (consistent with "everything the agent
+does is a tool"):
+
+- **`delegate({ objective })`** — spawns a worker = a fresh `LoopController` with
+  its **own isolated `ContextEngine`** (just the objective — *not* the lead's
+  transcript; this is the context-isolation best practice), a **tool subset**,
+  the **shared sandbox** (workers coordinate through the filesystem), a **small
+  budget**, and an **`InMemoryRecorder`** (worker steps don't flood the parent's
+  DB trace). The worker's summary is returned to the lead as the tool result.
+- **Guardrails** — workers get **no `delegate`** (depth-1, no infinite recursion)
+  and **no finalize tools** (only the lead opens a PR / requests review).
+- `capabilities().multiAgent = true`.
+
+**Scope (MoSCoW):** Must ✅ (delegate tool spawning an isolated-context worker on
+the shared sandbox; no-recursion + no-finalize guardrails; bounded worker budget;
+in-memory worker trace; tests) · Should ✅ (worker summary returned to the lead;
+capability flag) · Won't this increment (parallel fan-out of multiple workers at
+once; A2A/cross-runtime agent protocol; a structured plan/synthesis step; depth
+> 1 hierarchies).
+
+**Tests:** a worker writes a file that lands in the **lead's** sandbox (shared
+workspace); workers expose neither `delegate` nor `open_pr` but do expose the
+coding tools; the worker budget bounds a runaway.
+
+With M2.18 the `native` runtime's capabilities are **all on**: self-hosted ✓ ·
+memory ✓ · outcomes ✓ · multi-agent ✓.
+
+## Next — beyond M2.18
+
+A real **local-model live run** (Ollama/vLLM) to exercise the loop end to end
+against an actual model; then **parallel fan-out** of workers and a
+**plan→synthesize** orchestration step. Full build plan:
 [`docs/architecture/in-house-sdk-and-runtime.md`](../architecture/in-house-sdk-and-runtime.md).

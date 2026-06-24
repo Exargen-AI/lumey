@@ -79,7 +79,7 @@ describe('nativeAdapter.execute', () => {
   it('reports honest capabilities (self-hosted, single-agent)', () => {
     const adapter = createNativeAdapter({ modelFactory: () => modelSaying('x') });
     expect(adapter.id).toBe('native');
-    expect(adapter.capabilities()).toMatchObject({ selfHosted: true, multiAgent: false });
+    expect(adapter.capabilities()).toMatchObject({ selfHosted: true, memory: true, outcomes: true, multiAgent: true });
   });
 });
 

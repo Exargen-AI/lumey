@@ -29,6 +29,7 @@ import { buildSystemPrompt } from '../runtime/context/systemPrompt';
 import { ToolRunner } from '../runtime/tools/toolRunner';
 import { defaultTools } from '../runtime/tools/builtins';
 import { createRunTestsTool, createGitCommitTool, createOpenPrTool } from '../runtime/tools/finalize';
+import { createDelegateTool } from '../runtime/tools/delegate';
 import { referenceGitProvider } from '../runtime/git/referenceProvider';
 import { createGitHubProvider } from '../runtime/git/githubProvider';
 import { createInstallationTokenSource, type InstallationTokenSource } from '../runtime/git/githubAppAuth';
@@ -151,8 +152,12 @@ async function resolveGitProviderAndBase(ctx: RunContext, sandbox: Sandbox): Pro
   return { provider: referenceGitProvider, base: process.env.LUMEY_PR_BASE };
 }
 
-/** The default toolset for a run: the coding tools plus run-scoped finalize tools. */
-async function defaultRunTools(ctx: RunContext, sandbox: Sandbox): Promise<ToolRunner> {
+/**
+ * The lead agent's toolset: coding tools, run-scoped finalize tools, and
+ * `delegate` (multi-agent — hub-and-spoke). Workers get only the coding tools
+ * (no finalize, no `delegate`), so they can't open PRs or recurse.
+ */
+async function defaultRunTools(ctx: RunContext, sandbox: Sandbox, model: ModelClient): Promise<ToolRunner> {
   const branch = `lumey/run-${ctx.runId}`;
   const { provider, base } = await resolveGitProviderAndBase(ctx, sandbox);
   return new ToolRunner([
@@ -167,6 +172,7 @@ async function defaultRunTools(ctx: RunContext, sandbox: Sandbox): Promise<ToolR
         await linkPullRequestToTask(ctx.taskId, { externalId: ref.externalId, url: ref.url, title: input.title });
       },
     }),
+    createDelegateTool({ model, makeSubTools: () => new ToolRunner(defaultTools()) }),
   ]);
 }
 
@@ -240,7 +246,7 @@ export function createNativeAdapter(deps: NativeAdapterDeps): RuntimeAdapter {
       selfHosted: true, // runs anywhere this process runs, including air-gapped
       memory: true, // recalls + records cross-run project memory
       outcomes: true, // grades the result vs acceptance criteria and revises
-      multiAgent: false, // single-agent loop for now
+      multiAgent: true, // the lead can delegate focused subtasks to sub-agents
     }),
 
     async execute(ctx) {
@@ -251,7 +257,7 @@ export function createNativeAdapter(deps: NativeAdapterDeps): RuntimeAdapter {
         const model = deps.modelFactory(); // throws if no model configured
         const projectId = await projectIdForTask(ctx.taskId);
         sandbox = await (deps.sandboxFactory ?? repoAwareSandbox)(ctx);
-        const tools = deps.toolsFactory ? deps.toolsFactory() : await defaultRunTools(ctx, sandbox);
+        const tools = deps.toolsFactory ? deps.toolsFactory() : await defaultRunTools(ctx, sandbox, model);
         const preamble = projectId ? await memoryPreamble(projectId) : [];
         const context = new ContextEngine(buildSystemPrompt(ctx, tools.list()), { summarize: modelSummarizer(model), preamble });
         const loop = new LoopController({

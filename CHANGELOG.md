@@ -76,8 +76,12 @@ covering the UI throughout.
   `capabilities().memory = true`.
 - **M2.17 — Outcomes** ✅ — the agent grades its result vs the acceptance
   criteria and revises before requesting review (bounded by `maxRevisions`);
-  `capabilities().outcomes = true`. Native caps now: self-hosted ✓ · memory ✓ ·
-  outcomes ✓ (multi-agent ⏳).
+  `capabilities().outcomes = true`.
+- **M2.18 — multi-agent** ✅ — the lead `delegate`s focused sub-objectives to
+  worker sub-agents (orchestrator-worker / hub-and-spoke) with **isolated
+  context**, the shared sandbox, bounded budget, and no-recursion guardrails;
+  `capabilities().multiAgent = true`. **Native caps now all on: self-hosted ✓ ·
+  memory ✓ · outcomes ✓ · multi-agent ✓.**
 
 ## Part B — the Platform SDK (in-house, schema-first)
 
@@ -95,5 +99,5 @@ TypeScript *and* generated Python, with a drift guard.
 
 ## Health (current)
 
-1094 backend tests + 39 SDK tests green · typecheck clean (backend + frontend +
+1097 backend tests + 39 SDK tests green · typecheck clean (backend + frontend +
 sdk) · zero dead exports · green at every commit.
