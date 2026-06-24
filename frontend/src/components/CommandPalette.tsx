@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, FolderKanban, CheckSquare, Users, BarChart3, Clock, FileText, ArrowRight, Command, ClipboardCheck } from 'lucide-react';
+import { Search, FolderKanban, CheckSquare, Users, BarChart3, FileText, ArrowRight, Command } from 'lucide-react';
 import { useMyTasks } from '@/hooks/useTasks';
 import { useProjects } from '@/hooks/useProjects';
 import { useAuthStore } from '@/stores/authStore';
@@ -62,7 +62,7 @@ export function CommandPalette() {
   const projectsPath = getProjectWorkspaceRoute(user.role, permissions);
   const analyticsPath = isPM ? '/pm/analytics' : '/analytics';
   const standupPath = isPM ? '/pm/standup' : '/standup';
-  const activityPath = isPM ? '/pm/activity' : '/activity';
+  const activityPath = isPM ? '/pm/activity' : '/today';
 
   // Build command list
   const commands: CommandItem[] = [
@@ -72,20 +72,9 @@ export function CommandPalette() {
   if (user.role === 'ENGINEER') {
     commands.push(
       { id: 'eod', label: 'Submit EOD Update', description: 'Log your daily progress', icon: FileText, action: () => go('/eng/eod-update'), category: 'Actions' },
-      // Both subcommands route to the combined "My Time" page with a tab
-      // hint so the user lands on the right view directly.
-      { id: 'timesheet', label: 'Open Timesheet', description: 'Log hours for the week', icon: Clock, action: () => go('/my-time?tab=timesheet'), category: 'Actions' },
       { id: 'my-tasks', label: 'My Tasks', description: 'View all assigned tasks', icon: CheckSquare, action: () => go('/eng/my-tasks'), category: 'Actions' },
     );
   }
-
-  // "My Time" is a personal page available to everyone — surfacing it in
-  // the palette gives non-engineers (PMs, admins) a quick way to file a
-  // leave request or check their hours without hunting through the sidebar.
-  commands.push(
-    { id: 'my-time', label: 'My Time', description: 'Timesheet and leave', icon: Clock, action: () => go('/my-time'), category: 'Navigation' },
-    { id: 'apply-leave', label: 'Apply for Leave', description: 'File a new leave request', icon: Clock, action: () => go('/my-time?tab=leave'), category: 'Actions' },
-  );
 
   if ((isAdminLike || isPM) && canViewProjects) {
     commands.push({ id: 'projects', label: 'Projects', description: 'Browse all projects', icon: FolderKanban, action: () => go(projectsPath), category: 'Navigation' });
@@ -105,12 +94,6 @@ export function CommandPalette() {
 
   if (permissions.includes('analytics.view_team')) {
     commands.push({ id: 'team', label: 'Team Capacity', description: 'Review team utilization', icon: Users, action: () => go(isPM ? '/pm/team' : '/team'), category: 'Navigation' });
-  }
-
-  if (permissions.includes('analytics.view_team')) {
-    // Combined approvals page — PM lands on Timesheets tab; SUPER_ADMIN
-    // sees both Timesheets and Leave tabs there. No more split URLs.
-    commands.push({ id: 'approvals', label: 'Approvals', description: 'Review timesheets and leave requests', icon: ClipboardCheck, action: () => go('/approvals'), category: 'Navigation' });
   }
 
   if (permissions.includes('user.view')) {

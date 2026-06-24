@@ -20,11 +20,10 @@ import { DeliverablesPanel } from '@/components/deliverables/DeliverablesPanel';
 import { ClientAccessPanel } from '@/components/projects/ClientAccessPanel';
 import { TaskDetailModal } from '@/components/tasks/TaskDetailModal';
 import { ProductsTab } from '@/components/products/ProductsTab';
-import { DevelopmentOpsTab } from '@/components/devops/DevelopmentOpsTab';
 import { useTasks } from '@/hooks/useTasks';
 import { useProjectAnalytics } from '@/hooks/useAnalytics';
 
-const TABS = ['Board', 'Sprints', 'Epics', 'Products', 'Timeline', 'Deliverables', 'Decisions', 'DevelopmentOps', 'Analytics', 'Settings'] as const;
+const TABS = ['Board', 'Sprints', 'Epics', 'Products', 'Timeline', 'Deliverables', 'Decisions', 'Analytics', 'Settings'] as const;
 
 export function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -183,7 +182,6 @@ export function ProjectDetailPage() {
       {activeTab === 'Timeline' && <ProjectTimeline projectId={id!} />}
       {activeTab === 'Deliverables' && <DeliverablesPanel projectId={id!} manage />}
       {activeTab === 'Decisions' && <DecisionList projectId={id!} />}
-      {activeTab === 'DevelopmentOps' && <DevelopmentOpsTab projectId={id!} />}
       {activeTab === 'Analytics' && <ProjectAnalyticsTab projectId={id!} />}
       {activeTab === 'Settings' && (
         <div className="space-y-6">

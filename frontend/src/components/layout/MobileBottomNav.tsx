@@ -3,8 +3,8 @@ import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Sunrise, CheckSquare, MoreHorizontal,
   LayoutGrid, KanbanSquare, FileText, GanttChart, Package, Lightbulb,
-  BarChart3, ShieldCheck, Activity, Boxes, FolderKanban, Inbox, Sun,
-  Users, ClipboardCheck, UsersRound, BookOpen, CalendarClock,
+  BarChart3, Activity, Boxes, FolderKanban, Inbox, Sun,
+  Users, UsersRound,
   Shield, Settings, CalendarRange,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
@@ -209,7 +209,6 @@ function buildNav(
         { label: 'Deliverables',    path: `${base}/deliverables`,    Icon: Package },
         { label: 'Decisions',       path: `${base}/decisions`,       Icon: Lightbulb },
         { label: 'Insights',        path: `${base}/insights`,        Icon: BarChart3 },
-        { label: 'Compliance',      path: `${base}/compliance`,      Icon: ShieldCheck },
         // URL stays `/activity` (no broken bookmarks); label flips to
         // "Today" to match the sidebar after the Today + Activity merge.
         { label: 'Today',           path: `${base}/activity`,        Icon: Activity },
@@ -263,7 +262,6 @@ function buildNav(
     }
     if (hasAny('analytics.view_team')) {
       moreItems.push({ label: 'Team',       path: '/team',      Icon: Users });
-      moreItems.push({ label: 'Approvals',  path: '/approvals', Icon: ClipboardCheck });
     }
     if (hasAny('analytics.view_portfolio', 'analytics.view_project', 'analytics.view_team')) {
       moreItems.push({ label: 'Analytics', path: '/analytics', Icon: BarChart3 });
@@ -271,10 +269,6 @@ function buildNav(
     if (hasAny('user.view')) {
       moreItems.push({ label: 'People', path: '/users', Icon: UsersRound });
     }
-    moreItems.push({ label: 'Compliance',        path: '/compliance/courses',     Icon: ShieldCheck,    group: 'Compliance' });
-    moreItems.push({ label: 'Onboarding Status', path: '/compliance/enrollments', Icon: ClipboardCheck });
-    moreItems.push({ label: 'Content', path: '/cms', Icon: BookOpen, group: 'Content' });
-    moreItems.push({ label: 'My Time', path: '/my-time', Icon: CalendarClock, group: 'Personal' });
     if (role === UserRole.SUPER_ADMIN || role === UserRole.TESTING) {
       if (hasAny('rbac.manage')) moreItems.push({ label: 'Access', path: '/rbac', Icon: Shield, group: 'Founder' });
       moreItems.push({ label: 'System', path: '/settings', Icon: Settings, group: 'Founder' });
@@ -288,13 +282,10 @@ function buildNav(
     // serves the same purpose now.
     if (hasAny('analytics.view_team')) {
       moreItems.push({ label: 'Team',      path: '/pm/team',      Icon: Users });
-      moreItems.push({ label: 'Approvals', path: '/approvals',    Icon: ClipboardCheck });
     }
     if (hasAny('analytics.view_portfolio', 'analytics.view_project', 'analytics.view_team')) {
       moreItems.push({ label: 'Analytics', path: '/pm/analytics', Icon: BarChart3 });
     }
-    moreItems.push({ label: 'Content', path: '/cms', Icon: BookOpen, group: 'Content' });
-    moreItems.push({ label: 'My Time', path: '/my-time', Icon: CalendarClock, group: 'Personal' });
   } else if (role === UserRole.ENGINEER) {
     moreItems.push({ label: 'Projects', path: '/projects', Icon: FolderKanban, group: 'Workspace' });
     // Activity entry dropped — see admin block.
@@ -304,10 +295,7 @@ function buildNav(
     if (hasAny('analytics.view_team')) {
       moreItems.push({ label: 'Standup',   path: '/standup',   Icon: Sun });
       moreItems.push({ label: 'Team',      path: '/team',      Icon: Users });
-      moreItems.push({ label: 'Approvals', path: '/approvals', Icon: ClipboardCheck });
     }
-    moreItems.push({ label: 'Content', path: '/cms', Icon: BookOpen, group: 'Content' });
-    moreItems.push({ label: 'My Time', path: '/my-time', Icon: CalendarClock, group: 'Personal' });
   }
 
   return { primary, more: moreItems, hidden: false };

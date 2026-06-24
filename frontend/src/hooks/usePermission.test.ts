@@ -16,7 +16,6 @@ function seedPermissions(perms: string[]) {
     user: { id: 'u1', name: 'Test', email: 't@x.in', role: 'ADMIN' } as any,
     accessToken: 'fake',
     permissions: perms,
-    pendingMandatoryEnrollments: [],
     isAuthenticated: true,
     isLoading: false,
   });

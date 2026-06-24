@@ -2,7 +2,6 @@ import { UserRole, TaskStatus, Prisma } from '@prisma/client';
 import prisma from '../config/database';
 import { NotFoundError, ForbiddenError, ValidationError, ConflictError } from '../utils/errors';
 import { logActivity } from './activity.service';
-import { emitProductivityEvent } from '../lib/productivityOutbox';
 import {
   notifyTaskAssigned,
   notifyTaskBlocked,
@@ -184,70 +183,6 @@ export async function enforceAgentDoneGate(
       'You do not have permission to transition tasks to Done.',
     );
   }
-}
-
-/**
- * Pulse productivity score — EXECUTION signal hook.
- *
- * Emit a `task.closed` productivity event when a task transitions TO
- * Done (not on done-to-done re-saves, not on from-done reverts).
- * Called inside the caller's existing $transaction.
- *
- * Credit goes to the task's ASSIGNEE (the person who did the work),
- * not whoever clicked the close button — a manager closing someone's
- * task should credit them, not the manager. Unowned tasks emit no
- * event (no one to credit).
- *
- * Gaming guards applied at write time:
- *   task_closed_too_fast: task age <60 min → flagged (scorer drops it)
- *
- * Other guards (self-resolve, no-description) are evaluated by the
- * scorer at recompute time so they can be tuned without re-emitting
- * events. The raw payload carries the needed fields.
- */
-async function emitTaskClosedEvent(
-  tx: Prisma.TransactionClient,
-  taskId: string,
-  oldStatus: TaskStatus,
-  newStatus: TaskStatus,
-  closerUserId: string,
-  existing: Pick<
-    Prisma.TaskGetPayload<{}>,
-    'creatorId' | 'assigneeId' | 'storyPoints' | 'description' | 'createdAt'
-  >,
-): Promise<void> {
-  if (newStatus !== TaskStatus.DONE) return;
-  if (oldStatus === TaskStatus.DONE) return;
-  if (!existing.assigneeId) return;
-
-  // Comment count at close time — gaming guard input (self-resolve + 0 comments).
-  const commentCount = await tx.comment.count({ where: { taskId } });
-
-  const selfResolved = closerUserId === existing.creatorId;
-  const hasDescription = !!existing.description?.trim();
-  const closedAt = new Date();
-  const ageMs = closedAt.getTime() - existing.createdAt.getTime();
-  const isTooFast = ageMs < 60 * 60 * 1000;
-
-  await emitProductivityEvent(tx, {
-    userId: existing.assigneeId,
-    signal: 'EXECUTION',
-    eventType: 'task.closed',
-    occurredAt: closedAt,
-    rawPayload: {
-      taskId,
-      storyPoints: existing.storyPoints,
-      createdAt: existing.createdAt.toISOString(),
-      closedAt: closedAt.toISOString(),
-      closerUserId,
-      selfResolved,
-      commentCount,
-      hasDescription,
-    },
-    source: 'tasks',
-    sourceId: taskId,
-    gamingFlag: isTooFast ? 'task_closed_too_fast' : undefined,
-  });
 }
 
 export async function listTasks(
@@ -827,14 +762,6 @@ export async function updateTask(
             changedBy: userId,
           },
         });
-        await emitTaskClosedEvent(
-          tx,
-          taskId,
-          existing.status,
-          data.status as TaskStatus,
-          userId,
-          existing,
-        );
       }
       const inner = await tx.task.findUnique({
         where: { id: taskId },
@@ -865,14 +792,6 @@ export async function updateTask(
             changedBy: userId,
           },
         });
-        await emitTaskClosedEvent(
-          tx,
-          taskId,
-          existing.status,
-          data.status as TaskStatus,
-          userId,
-          existing,
-        );
       }
       return inner;
     });
@@ -1650,10 +1569,8 @@ export async function previewBulkDeleteCascade(
     return { taskCount: 0, comments: 0, timeEntries: 0, loggedHours: 0, externalLinks: 0, taskLinks: 0, statusHistory: 0 };
   }
 
-  const [comments, timeEntries, hoursAgg, externalLinks, taskLinksFrom, taskLinksTo, statusHistory] = await Promise.all([
+  const [comments, externalLinks, taskLinksFrom, taskLinksTo, statusHistory] = await Promise.all([
     prisma.comment.count({ where: { taskId: { in: allowedTaskIds } } }),
-    prisma.timeEntry.count({ where: { taskId: { in: allowedTaskIds } } }),
-    prisma.timeEntry.aggregate({ where: { taskId: { in: allowedTaskIds } }, _sum: { hours: true } }),
     prisma.taskExternalLink.count({ where: { taskId: { in: allowedTaskIds } } }),
     prisma.taskLink.count({ where: { fromTaskId: { in: allowedTaskIds } } }),
     prisma.taskLink.count({ where: { toTaskId: { in: allowedTaskIds } } }),
@@ -1662,8 +1579,8 @@ export async function previewBulkDeleteCascade(
   return {
     taskCount: allowedTaskIds.length,
     comments,
-    timeEntries,
-    loggedHours: Number(hoursAgg._sum.hours ?? 0),
+    timeEntries: 0,
+    loggedHours: 0,
     externalLinks,
     taskLinks: taskLinksFrom + taskLinksTo,
     statusHistory,
@@ -1843,7 +1760,6 @@ export async function moveTask(
       await tx.taskStatusHistory.create({
         data: { taskId, fromStatus: oldStatus, toStatus: newStatus, changedBy: userId },
       });
-      await emitTaskClosedEvent(tx, taskId, oldStatus, newStatus, userId, task);
     }
 
     await logActivity({

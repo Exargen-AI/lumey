@@ -31,9 +31,9 @@ export default defineConfig({
         'logo.jpeg',
       ],
       manifest: {
-        name: 'Exargen Command Center',
-        short_name: 'Exargen',
-        description: 'Portfolio + project management for the Exargen studio. Track work, sign off deliverables, and submit bugs from anywhere.',
+        name: 'Lumey Command Center',
+        short_name: 'Lumey',
+        description: 'Portfolio + project management for the Lumey studio. Track work, sign off deliverables, and submit bugs from anywhere.',
         // Match the iOS / Android theme-color metas in index.html so the
         // status-bar matches the app surface on launch.
         theme_color: '#fafbfc',

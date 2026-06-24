@@ -31,12 +31,7 @@ export async function clearSeedData() {
   if (seedUserIds.length > 0) {
     await prisma.taskStatusHistory.deleteMany({ where: { changedBy: { in: seedUserIds } } });
     await prisma.dailyUpdate.deleteMany({ where: { userId: { in: seedUserIds } } });
-    await prisma.timeEntry.deleteMany({ where: { userId: { in: seedUserIds } } });
     await prisma.notification.deleteMany({ where: { userId: { in: seedUserIds } } });
-    await prisma.timesheetWeek.deleteMany({
-      where: { OR: [{ userId: { in: seedUserIds } }, { approvedBy: { in: seedUserIds } }] },
-    });
-    await prisma.cmsBlog.deleteMany({ where: { authorId: { in: seedUserIds } } });
   }
 
   await prisma.user.deleteMany({ where: { isSeedData: true, role: { not: UserRole.SUPER_ADMIN } } });

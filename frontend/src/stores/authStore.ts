@@ -1,20 +1,15 @@
 import { create } from 'zustand';
-import type { PendingMandatoryEnrollment, User } from '@exargen/shared';
+import type { User } from '@exargen/shared';
 
 interface AuthState {
   user: User | null;
   /** Held in memory only. Never persisted to localStorage — XSS exposure (QA finding #5). */
   accessToken: string | null;
   permissions: string[];
-  pendingMandatoryEnrollments: PendingMandatoryEnrollment[];
   isAuthenticated: boolean;
   isLoading: boolean;
-  setAuth: (user: User, accessToken: string, permissions: string[], pendingMandatoryEnrollments?: PendingMandatoryEnrollment[]) => void;
+  setAuth: (user: User, accessToken: string, permissions: string[]) => void;
   setAccessToken: (token: string) => void;
-  setPendingEnrollments: (enrollments: PendingMandatoryEnrollment[]) => void;
-  /** Patch the in-memory user with a captured legal name. Called after the
-   *  one-time legal-name capture step on the OnboardingGate succeeds. */
-  setUserLegalName: (legalName: string) => void;
   clearAuth: () => void;
   setLoading: (loading: boolean) => void;
 }
@@ -31,18 +26,16 @@ export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   accessToken: null,
   permissions: [],
-  pendingMandatoryEnrollments: [],
   isAuthenticated: false,
   // Start in loading=true so app shells don't briefly render a logged-out
   // skeleton while we /auth/refresh on boot. App.useInitAuth flips this once.
   isLoading: true,
 
-  setAuth: (user, accessToken, permissions, pendingMandatoryEnrollments = []) => {
+  setAuth: (user, accessToken, permissions) => {
     set({
       user,
       accessToken,
       permissions,
-      pendingMandatoryEnrollments,
       isAuthenticated: true,
       isLoading: false,
     });
@@ -51,18 +44,11 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   setAccessToken: (token) => set({ accessToken: token }),
 
-  setPendingEnrollments: (enrollments) => set({ pendingMandatoryEnrollments: enrollments }),
-
-  setUserLegalName: (legalName) => set((s) => (
-    s.user ? { user: { ...s.user, legalName } } : {}
-  )),
-
   clearAuth: () => {
     set({
       user: null,
       accessToken: null,
       permissions: [],
-      pendingMandatoryEnrollments: [],
       isAuthenticated: false,
       isLoading: false,
     });
@@ -83,7 +69,6 @@ if (channel) {
         user: null,
         accessToken: null,
         permissions: [],
-        pendingMandatoryEnrollments: [],
         isAuthenticated: false,
       });
     }

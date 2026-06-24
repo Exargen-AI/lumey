@@ -112,7 +112,7 @@ test.describe('Smoke — Admin', () => {
     const errors = setupConsoleErrorTracking(page);
     await login(page, 'admin@exargen.in');
     await page.goto('/dashboard');
-    await expect(page.getByRole('heading', { level: 1 })).toContainText(/Exargen/i);
+    await expect(page.getByRole('heading', { level: 1 })).toContainText(/Lumey/i);
     expect(errors).toEqual([]);
   });
 

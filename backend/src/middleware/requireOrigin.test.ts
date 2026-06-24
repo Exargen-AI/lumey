@@ -117,21 +117,6 @@ describe('requireOrigin — carve-outs for trusted public paths', () => {
     expect(res.status).not.toHaveBeenCalled();
   });
 
-  it('lets a POST under /api/v1/cms/public/* through without Origin (per-project API key auth)', () => {
-    const next = vi.fn();
-    const res = makeRes();
-    requireOrigin(
-      makeReq({
-        method: 'POST',
-        path: '/api/v1/cms/public/foo/bar',
-        headers: {},
-      }),
-      res,
-      next,
-    );
-    expect(next).toHaveBeenCalledOnce();
-  });
-
   it('does NOT carve out paths that merely START with /api/v1 (must be a documented carve-out prefix)', () => {
     const next = vi.fn();
     const res = makeRes();

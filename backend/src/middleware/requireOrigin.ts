@@ -23,19 +23,7 @@ import { Request, Response, NextFunction } from 'express';
 // circuit below, and any state-changing operation under those paths now
 // has to satisfy Origin like every other mutation.
 const PUBLIC_PATH_PREFIXES = [
-  '/api/v1/cms/public',
   '/api/v1/integrations/github/webhook',
-  // Pulse org-level GitHub webhook (Wave 3, PR #33). Same posture as
-  // the per-project webhook above: HMAC verification inside the
-  // handler is the trust boundary.
-  '/api/v1/webhooks/github/pulse',
-  // 2026-05-28b — Pulse Windows agent endpoints. The agent is server-
-  // to-server (axios from Node, no browser, no cookies). Auth is via
-  // `Authorization: Device <key>` (per-device API key, hashed in DB)
-  // for heartbeat/snapshot, and via the single-use enrollment token in
-  // the body for enroll. Neither has any browser-cookie attack
-  // surface, so the Origin CSRF check doesn't apply.
-  '/api/v1/devices/',
 ];
 
 export function requireOrigin(req: Request, res: Response, next: NextFunction) {

@@ -14,7 +14,6 @@ const iconMap: Record<string, React.ComponentType<any>> = {
 
 export function Sidebar() {
   const { user, permissions, clearAuth } = useAuthStore();
-  const pendingEnrollmentCount = useAuthStore((s) => s.pendingMandatoryEnrollments.length);
   const { sidebarOpen, toggleSidebar } = useUIStore();
   const navigate = useNavigate();
   const confirm = useConfirm();
@@ -74,10 +73,10 @@ export function Sidebar() {
         {sidebarOpen ? (
           <>
             <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-7 h-7 rounded-lg overflow-hidden ring-1 ring-black/5 dark:ring-white/10 shrink-0">
-                <img src="/logo.jpeg" alt="Exargen" className="w-full h-full object-cover" />
+              <div className="w-7 h-7 rounded-lg overflow-hidden ring-1 ring-black/5 dark:ring-white/10 shrink-0 flex items-center justify-center bg-brand-600 text-white text-[13px] font-bold">
+                L
               </div>
-              <span className="text-[15px] font-semibold tracking-tight text-gray-900 dark:text-obsidian-fg truncate">Exargen</span>
+              <span className="text-[15px] font-semibold tracking-tight text-gray-900 dark:text-obsidian-fg truncate">Lumey</span>
             </div>
             <Tooltip content="Collapse sidebar" side="right">
               <button
@@ -93,10 +92,10 @@ export function Sidebar() {
           <Tooltip content="Expand sidebar" side="right">
             <button
               onClick={toggleSidebar}
-              className="w-9 h-9 rounded-lg overflow-hidden ring-1 ring-black/5 dark:ring-white/10 group relative"
+              className="w-9 h-9 rounded-lg overflow-hidden ring-1 ring-black/5 dark:ring-white/10 group relative flex items-center justify-center bg-brand-600 text-white text-[15px] font-bold"
               aria-label="Expand sidebar"
             >
-              <img src="/logo.jpeg" alt="Exargen" className="w-full h-full object-cover transition-opacity group-hover:opacity-40" />
+              <span className="transition-opacity group-hover:opacity-40">L</span>
               <ChevronRight size={14} className="absolute inset-0 m-auto text-white opacity-0 group-hover:opacity-100 transition-opacity" />
             </button>
           </Tooltip>
@@ -112,11 +111,6 @@ export function Sidebar() {
         )}
         {navItems.map((item) => {
           const Icon = iconMap[item.icon] || LayoutDashboard;
-          // Confidentiality nav row gets a subtle pulsing dot when there's
-          // something pending. Source of truth is the auth store's
-          // pendingMandatoryEnrollments; the badge is just discovery, the
-          // page itself enforces nothing.
-          const showPendingDot = item.path === '/confidentiality' && pendingEnrollmentCount > 0;
           return (
             <NavItem
               key={item.path}
@@ -124,7 +118,6 @@ export function Sidebar() {
               Icon={Icon}
               label={item.label}
               collapsed={!sidebarOpen}
-              showDot={showPendingDot}
             />
           );
         })}

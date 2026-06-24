@@ -11,13 +11,12 @@ export function useAuth() {
   const login = useCallback(async (email: string, password: string) => {
     const result = await loginApi(email, password);
     setAccessToken(result.accessToken);
-    // Fetch permissions + pending mandatory enrollments via /me
+    // Fetch permissions via /me
     const meResult = await getMeApi();
     setAuth(
       result.user,
       result.accessToken,
       meResult.permissions,
-      meResult.pendingMandatoryEnrollments ?? [],
     );
     const dashboardPath = getDefaultRoute(result.user.role, meResult.permissions);
     navigate(dashboardPath);
@@ -44,7 +43,6 @@ export function useAuth() {
         meResult.user,
         useAuthStore.getState().accessToken || '',
         meResult.permissions,
-        meResult.pendingMandatoryEnrollments ?? [],
       );
     } catch {
       clearAuth();
@@ -82,7 +80,6 @@ export function useInitAuth() {
           meResult.user,
           useAuthStore.getState().accessToken || '',
           meResult.permissions,
-          meResult.pendingMandatoryEnrollments ?? [],
         );
       })
       .catch((err) => {

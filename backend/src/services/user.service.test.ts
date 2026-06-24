@@ -27,25 +27,14 @@ import { prismaMock } from '../test/prismaMock';
 import { UserRole } from '@prisma/client';
 import { ConflictError, ForbiddenError } from '../utils/errors';
 
-// Activity log + course enrollment helpers — mocked so we don't need to
-// stand up their full Prisma surface. The email-normalization assertions
-// don't depend on them.
-const { logActivitySpy, getMandatoryCoursesSpy, enrollSpy } = vi.hoisted(() => ({
+// Activity log mocked so we don't need to stand up its full Prisma
+// surface. The email-normalization assertions don't depend on it.
+const { logActivitySpy } = vi.hoisted(() => ({
   logActivitySpy: vi.fn().mockResolvedValue(undefined),
-  getMandatoryCoursesSpy: vi.fn().mockResolvedValue([]),
-  enrollSpy: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('./activity.service', () => ({
   __esModule: true,
   logActivity: logActivitySpy,
-}));
-vi.mock('./course.service', () => ({
-  __esModule: true,
-  getMandatoryCoursesForRole: getMandatoryCoursesSpy,
-}));
-vi.mock('./enrollment.service', () => ({
-  __esModule: true,
-  enrollUserInCourse: enrollSpy,
 }));
 vi.mock('../utils/password', () => ({
   __esModule: true,
@@ -71,9 +60,6 @@ function makeStoredUser(overrides: Partial<{ id: string; email: string; role: Us
     failedLoginCount: 0,
     lockedUntil: null,
     lastLoginAt: null,
-    onboardingRequired: false,
-    onboardingCompletedAt: null,
-    legalName: null,
     userType: 'HUMAN' as const,
     agentRole: null,
     agentSystemPromptPath: null,

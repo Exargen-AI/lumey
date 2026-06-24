@@ -2289,8 +2289,6 @@ describe('previewBulkDeleteCascade', () => {
       { id: 't2', projectId: 'proj-1' },
     ] as any);
     prismaMock.comment.count.mockResolvedValue(12);
-    prismaMock.timeEntry.count.mockResolvedValue(8);
-    prismaMock.timeEntry.aggregate.mockResolvedValue({ _sum: { hours: 4.5 } } as any);
     prismaMock.taskExternalLink.count.mockResolvedValue(2);
     prismaMock.taskLink.count
       .mockResolvedValueOnce(3)  // from
@@ -2302,8 +2300,8 @@ describe('previewBulkDeleteCascade', () => {
     expect(result).toEqual({
       taskCount: 2,
       comments: 12,
-      timeEntries: 8,
-      loggedHours: 4.5,
+      timeEntries: 0,
+      loggedHours: 0,
       externalLinks: 2,
       taskLinks: 4, // 3 + 1
       statusHistory: 20,
@@ -2348,8 +2346,6 @@ describe('previewBulkDeleteCascade', () => {
     ] as any);
     // The aggregates should only fire with the filtered (own) ids.
     prismaMock.comment.count.mockResolvedValue(7);
-    prismaMock.timeEntry.count.mockResolvedValue(3);
-    prismaMock.timeEntry.aggregate.mockResolvedValue({ _sum: { hours: 2.5 } } as any);
     prismaMock.taskExternalLink.count.mockResolvedValue(0);
     prismaMock.taskLink.count.mockResolvedValueOnce(0).mockResolvedValueOnce(0);
     prismaMock.taskStatusHistory.count.mockResolvedValue(5);

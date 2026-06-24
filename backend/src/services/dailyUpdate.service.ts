@@ -1,8 +1,6 @@
 import { Mood, TaskStatus } from '@prisma/client';
 import prisma from '../config/database';
 import { toDateOnlyString } from '../utils/date';
-import { emitProductivityEvent } from '../lib/productivityOutbox';
-import { standupBodyHash, visibleStandupLength } from '../lib/standupNormalise';
 
 interface DailyUpdateInput {
   summary: string;
@@ -88,49 +86,6 @@ export async function submitDailyUpdate(userId: string, input: DailyUpdateInput)
         }
       }
     }
-
-    // ─── Emit productivity-score event (outbox, R5) ─────────────────
-    // STANDUP signal feeds the multi-signal composite score. Body
-    // length + hash power gaming guards (too-short, duplicate-body).
-    // No-op when `pulseCompositeScore.beta` flag is off.
-    //
-    // bodyHash is a short hex prefix of SHA-256 over the normalised
-    // body text — sufficient for duplicate-day detection without
-    // storing the full body twice.
-    //
-    // Wave 12 — the gaming-defeat logic moved to `lib/standupNormalise.ts`
-    // so it has its own unit tests. The new normalisation strips
-    // punctuation, digits, emoji, etc. before hashing so trivial
-    // adversarial mutations ("v1" → "v2", trailing ".", etc.) collapse
-    // to the same hash. See that file for the full equivalence
-    // class.
-    const rawBody = [
-      input.summary?.trim() || '',
-      input.blockers?.trim() || '',
-      input.plans?.trim() || '',
-    ].join('\n---\n');
-    const bodyHash = standupBodyHash(rawBody);
-    const bodyLength = visibleStandupLength(rawBody);
-    const MIN_BODY_CHARS = 50;
-
-    await emitProductivityEvent(tx, {
-      userId,
-      signal: 'STANDUP',
-      eventType: 'standup.submitted',
-      occurredAt: dailyUpdate.createdAt,
-      rawPayload: {
-        date: toDateOnlyString(today),
-        bodyLength,
-        bodyHash,
-        mood: input.mood || 'NEUTRAL',
-        hasBlockers: !!input.blockers?.trim(),
-        hasPlans: !!input.plans?.trim(),
-        taskTransitions: input.tasks?.length ?? 0,
-      },
-      source: 'daily_updates',
-      sourceId: dailyUpdate.id,
-      gamingFlag: bodyLength < MIN_BODY_CHARS ? 'standup_too_short' : undefined,
-    });
 
     return tx.dailyUpdate.findUnique({
       where: { id: dailyUpdate.id },

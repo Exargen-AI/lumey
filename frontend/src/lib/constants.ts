@@ -22,19 +22,6 @@ import { UserRole } from '@exargen/shared';
 const PROJECT_VIEW_PERMISSIONS = ['project.view_all', 'project.view_assigned'];
 const ACTIVITY_PERMISSIONS = ['analytics.view_portfolio', 'analytics.view_project'];
 const ANALYTICS_PERMISSIONS = ['analytics.view_portfolio', 'analytics.view_project', 'analytics.view_team'];
-const CMS_PERMISSIONS = [
-  'cms.project.view',
-  'cms.project.create',
-  'cms.project.edit',
-  'cms.blog.view',
-  'cms.blog.create',
-  'cms.blog.edit',
-  'cms.template.view',
-  'cms.template.create',
-  'cms.template.edit',
-  'cms.media.view',
-  'cms.media.upload',
-];
 
 function hasAnyPermission(permissions: string[], required: string[]): boolean {
   return required.some((permission) => permissions.includes(permission));
@@ -50,10 +37,6 @@ export function canAccessSharedActivity(permissions: string[] = []): boolean {
 
 export function canAccessSharedAnalytics(permissions: string[] = []): boolean {
   return hasAnyPermission(permissions, ANALYTICS_PERMISSIONS);
-}
-
-export function canAccessSharedCms(permissions: string[] = []): boolean {
-  return hasAnyPermission(permissions, CMS_PERMISSIONS);
 }
 
 export const ROLE_DASHBOARD_PATH: Record<string, string> = {
@@ -130,24 +113,22 @@ export function getDefaultRoute(role: string, permissions: string[] = []): strin
       if (hasPermission('analytics.view_portfolio')) return '/dashboard';
       if (hasPermission('project.view_all') || hasPermission('project.view_assigned')) return '/projects';
       if (hasPermission('analytics.view_team')) return '/team';
-      if (hasPermission('analytics.view_project')) return '/activity';
+      if (hasPermission('analytics.view_project')) return '/today';
       if (hasPermission('user.view')) return '/users';
       if (hasPermission('project.create')) return '/projects/new';
       return '/projects';
     case UserRole.PRODUCT_MANAGER:
       if (hasPermission('analytics.view_portfolio')) return '/dashboard';
       if (canAccessSharedProjects(permissions)) return '/projects';
-      if (canAccessSharedCms(permissions)) return '/cms';
       if (hasPermission('project.view_assigned')) return '/pm/dashboard';
       if (hasPermission('analytics.view_team')) return '/pm/team';
-      if (hasPermission('analytics.view_project') || hasPermission('analytics.view_portfolio')) return '/pm/activity';
+      if (hasPermission('analytics.view_project') || hasPermission('analytics.view_portfolio')) return '/today';
       return '/pm/dashboard';
     case UserRole.ENGINEER:
       if (hasPermission('analytics.view_portfolio')) return '/dashboard';
       if (canAccessSharedProjects(permissions)) return '/projects';
       if (canAccessSharedAnalytics(permissions)) return '/analytics';
-      if (canAccessSharedActivity(permissions)) return '/activity';
-      if (canAccessSharedCms(permissions)) return '/cms';
+      if (canAccessSharedActivity(permissions)) return '/today';
       return '/eng/dashboard';
     case UserRole.CLIENT:
       // Clients always land in the stripped portal; per-project full
@@ -185,30 +166,10 @@ export const SIDEBAR_NAV = {
     { label: 'Timeline', path: '/timeline', icon: 'GanttChart', permissions: PROJECT_VIEW_PERMISSIONS },
     { label: 'Team', path: '/team', icon: 'Users', permission: 'analytics.view_team' },
     { label: 'Analytics', path: '/analytics', icon: 'BarChart3', permissions: ['analytics.view_portfolio', 'analytics.view_project', 'analytics.view_team'] },
-    // Combined Approvals — timesheets always, plus Leave tab for SUPER_ADMIN.
-    // The earlier "Approvals" + "Leave Approvals" pair is gone; both live
-    // inside the single page under tabs.
-    { label: 'Approvals', path: '/approvals', icon: 'ClipboardCheck', permission: 'analytics.view_team' },
     { label: 'People', path: '/users', icon: 'UsersRound', permission: 'user.view' },
-    { label: 'Compliance', path: '/compliance/courses', icon: 'ShieldCheck' },
-    { label: 'Onboarding Status', path: '/compliance/enrollments', icon: 'ClipboardCheck' },
-    { label: 'Content', path: '/cms', icon: 'BookOpen', permissions: CMS_PERMISSIONS },
-    // Combined personal page — was previously "Timesheet" + "Leave" entries
-    // for engineers, just "Leave" for everyone else. One link, two tabs.
-    { label: 'My Time', path: '/my-time', icon: 'CalendarClock' },
   ],
   superAdmin: [
-    // Founder-only nav. The "Leave Approvals" entry that used to live here
-    // is now folded into the shared `Approvals` page under a Leave tab.
     { label: 'Access', path: '/rbac', icon: 'Shield', permission: 'rbac.manage' },
-    // Pulse — employee productivity tracker + device health. Telemetry is
-    // SUPER_ADMIN-only by contract (backend double-gates); the sidebar
-    // entry follows the same boundary.
-    { label: 'Pulse', path: '/pulse', icon: 'Activity' },
-    // Pulse Reports — Wave 6 surface for the multi-signal composite
-    // score (separate page so the device-health view stays clean).
-    // Same SUPER_ADMIN-only boundary, triple-gated on the backend.
-    { label: 'Reports', path: '/pulse/reports', icon: 'BarChart3' },
     { label: 'System', path: '/settings', icon: 'Settings' },
   ],
   pm: [
@@ -222,24 +183,15 @@ export const SIDEBAR_NAV = {
     // Activity entry dropped — consolidated with Today at /today.
     { label: 'Team', path: '/pm/team', icon: 'Users', permission: 'analytics.view_team' },
     { label: 'Analytics', path: '/pm/analytics', icon: 'BarChart3', permissions: ['analytics.view_portfolio', 'analytics.view_project', 'analytics.view_team'] },
-    // Single approvals link — points at the shared `/approvals` page
-    // (PMs land on the Timesheets tab; the Leave tab is hidden for them).
-    { label: 'Approvals', path: '/approvals', icon: 'ClipboardCheck', permission: 'analytics.view_team' },
-    { label: 'Content', path: '/cms', icon: 'BookOpen', permissions: CMS_PERMISSIONS },
-    { label: 'My Time', path: '/my-time', icon: 'CalendarClock' },
   ],
   engineer: [
     { label: 'Dashboard', path: '/eng/dashboard', icon: 'LayoutDashboard' },
     { label: 'Today', path: '/today', icon: 'Sunrise' },
     { label: 'My Tasks', path: '/eng/my-tasks', icon: 'CheckSquare' },
-    // "Timesheet" + "Leave" collapsed into one personal page.
-    { label: 'My Time', path: '/my-time', icon: 'CalendarClock' },
     { label: 'Projects', path: '/projects', icon: 'FolderKanban', permissions: PROJECT_VIEW_PERMISSIONS },
     // Activity entry dropped — consolidated with Today at /today.
     { label: 'Analytics', path: '/analytics', icon: 'BarChart3', permissions: ANALYTICS_PERMISSIONS },
     { label: 'Standup', path: '/standup', icon: 'Sun', permission: 'analytics.view_team' },
     { label: 'Team', path: '/team', icon: 'Users', permission: 'analytics.view_team' },
-    { label: 'Approvals', path: '/approvals', icon: 'ClipboardCheck', permission: 'analytics.view_team' },
-    { label: 'Content', path: '/cms', icon: 'BookOpen', permissions: CMS_PERMISSIONS },
   ],
 };

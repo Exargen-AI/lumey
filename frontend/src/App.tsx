@@ -1,9 +1,8 @@
-import { Routes, Route, Navigate, useParams } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import { useInitAuth, useAuth } from '@/hooks/useAuth';
 import { useInactivityLogout } from '@/hooks/useInactivityLogout';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { RoleRedirect } from '@/components/auth/RoleRedirect';
-import { OnboardingGate } from '@/components/onboarding/OnboardingGate';
 import { InactivityWarningModal } from '@/components/auth/InactivityWarningModal';
 import { ErrorBoundary, ConfirmProvider } from '@/components/ui';
 import { reportBoundaryError } from '@/lib/errorReporter';
@@ -13,7 +12,6 @@ import { AppShell } from '@/components/layout/AppShell';
 import { ClientLayout } from '@/components/layout/ClientLayout';
 
 // Admin pages
-import { AdminDashboardPage } from '@/pages/admin/DashboardPage';
 import { StudioPortfolioPage } from '@/pages/admin/StudioPortfolioPage';
 import { TriageInboxPage } from '@/pages/admin/TriageInboxPage';
 import { ProjectListPage } from '@/pages/admin/ProjectListPage';
@@ -26,9 +24,6 @@ import { AnalyticsPage } from '@/pages/admin/AnalyticsPage';
 import { UserManagementPage } from '@/pages/admin/UserManagementPage';
 import { RBACPage } from '@/pages/admin/RBACPage';
 import { SystemSettingsPage } from '@/pages/admin/SystemSettingsPage';
-import { PulsePage } from '@/pages/admin/PulsePage';
-import { PulseReportsPage } from '@/pages/admin/PulseReportsPage';
-import { LeadDetailPage } from '@/pages/admin/LeadDetailPage';
 import { StandupViewPage } from '@/pages/admin/StandupViewPage';
 
 // PM pages
@@ -54,7 +49,6 @@ import { ClientInsightsPage } from '@/pages/client/sections/InsightsPage';
 import { ClientDocumentsPage } from '@/pages/client/sections/DocumentsPage';
 import { ClientActivityPage } from '@/pages/client/sections/ActivityPage';
 import { ClientBoardPage } from '@/pages/client/sections/BoardPage';
-import { ClientCompliancePage } from '@/pages/client/sections/CompliancePage';
 import { ClientProductsPage } from '@/pages/client/sections/ProductsPage';
 import { ClientProductDetailPage } from '@/pages/client/sections/ProductDetailPage';
 import { ClientHelpPage } from '@/pages/client/sections/HelpPage';
@@ -62,42 +56,9 @@ import { ClientHelpPage } from '@/pages/client/sections/HelpPage';
 // Shared pages
 import { TaskDetailPage } from '@/pages/TaskDetailPage';
 import { CreateTaskPage } from '@/pages/CreateTaskPage';
-import { MyTimePage } from '@/pages/MyTimePage';
 import { AccountPage } from '@/pages/AccountPage';
 import { TodayPage } from '@/pages/TodayPage';
-import { ApprovalsPage } from '@/pages/admin/ApprovalsPage';
 import { ProjectIngestPage } from '@/pages/ProjectIngestPage';
-import CmsPage from '@/pages/CmsPage';
-
-// CMS pages
-import { default as ProjectBlogsPage } from '@/pages/cms/ProjectBlogsPage';
-import { default as ProjectTemplatesPage } from '@/pages/cms/ProjectTemplatesPage';
-import { default as ProjectSettingsPage } from '@/pages/cms/ProjectSettingsPage';
-import { default as ProjectLeadsPage } from '@/pages/cms/ProjectLeadsPage';
-import { default as CreateBlogPage } from '@/pages/cms/CreateBlogPage';
-import { default as EditBlogPage } from '@/pages/cms/EditBlogPage';
-import { default as BlogPreviewPage } from '@/pages/cms/BlogPreviewPage';
-import { default as ProjectContentEnginePage } from '@/pages/cms/ProjectContentEnginePage';
-
-// Compliance / onboarding admin pages
-import { ComplianceCourseListPage } from '@/pages/admin/compliance/CourseListPage';
-import { ComplianceCourseDetailPage } from '@/pages/admin/compliance/CourseDetailPage';
-import { ComplianceEnrollmentsPage } from '@/pages/admin/compliance/EnrollmentsPage';
-import { UserOnboardingDetailPage } from '@/pages/admin/compliance/UserOnboardingDetailPage';
-import { MyConfidentialityPage } from '@/pages/onboarding/MyConfidentialityPage';
-
-/**
- * Forwards `/eng/projects/:projectId/tasks/new` to the canonical
- * `/projects/:projectId/tasks/new`. The eng-prefixed path was a leftover
- * from the role-prefix routing convention but nothing in the app
- * navigated to it — and the canonical route's `task.create` permission
- * already covers engineers, admins, and PMs, so a single destination is
- * enough. Kept as a transparent forward so old bookmarks don't 404.
- */
-function EngTaskCreateForward() {
-  const { projectId } = useParams<{ projectId: string }>();
-  return <Navigate to={`/projects/${projectId}/tasks/new`} replace />;
-}
 
 export function App() {
   useInitAuth();
@@ -117,19 +78,6 @@ export function App() {
   const projectPermissions = ['project.view_all', 'project.view_assigned'];
   const activityPermissions = ['analytics.view_portfolio', 'analytics.view_project'];
   const analyticsPermissions = ['analytics.view_portfolio', 'analytics.view_project', 'analytics.view_team'];
-  const cmsPermissions = [
-    'cms.project.view',
-    'cms.project.create',
-    'cms.project.edit',
-    'cms.blog.view',
-    'cms.blog.create',
-    'cms.blog.edit',
-    'cms.template.view',
-    'cms.template.create',
-    'cms.template.edit',
-    'cms.media.view',
-    'cms.media.upload',
-  ];
 
   return (
     <ErrorBoundary onError={reportBoundaryError}>
@@ -147,16 +95,6 @@ export function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
 
-      {/*
-        OnboardingGate is the app-level mandatory-onboarding chokepoint. It
-        wraps every authenticated route. If the user has any pending
-        mandatory enrollments (NDA / IP / Conduct / Security course), it
-        renders the CoursePlayer instead of the requested route. Once they
-        complete the course, /auth/me is refetched and the gate falls
-        through to <Outlet /> rendering the normal app.
-      */}
-      <Route element={<OnboardingGate />}>
-
       {/* Shared permission-based routes */}
       <Route element={<ProtectedRoute permissions={projectPermissions} />}>
         <Route element={<AppShell />}>
@@ -171,20 +109,6 @@ export function App() {
           {/* Admin/super-admin "My Tasks" — same component as engineers,
               role-aware navigation built in. Team feedback #3. */}
           <Route path="/my-tasks" element={<MyTasksPage />} />
-        </Route>
-      </Route>
-
-      {/* "My Time" — combined personal page (Timesheet + Leave tabs).
-          Open to every authenticated user; the inner tabs decide what's
-          visible. The old `/leaves` and `/eng/timesheet` paths redirect
-          here for any in-flight bookmarks/notification deep-links. */}
-      <Route element={<ProtectedRoute />}>
-        <Route element={<AppShell />}>
-          <Route path="/my-time" element={<MyTimePage />} />
-          {/* Back-compat redirects. `replace` so the user's history
-              doesn't have the legacy URL in it. */}
-          <Route path="/leaves" element={<Navigate to="/my-time?tab=leave" replace />} />
-          <Route path="/eng/timesheet" element={<Navigate to="/my-time?tab=timesheet" replace />} />
         </Route>
       </Route>
 
@@ -211,53 +135,6 @@ export function App() {
         </Route>
       </Route>
 
-      {/* "Approvals" — combined queue (Timesheets + Leave tabs). The
-          Leave tab inside is gated to SUPER_ADMIN by the page itself.
-          Route gate uses analytics.view_team so PMs can still review
-          timesheets even though they can't action leave. */}
-      <Route element={<ProtectedRoute permissions={['analytics.view_team']} />}>
-        <Route element={<AppShell />}>
-          <Route path="/approvals" element={<ApprovalsPage />} />
-          {/* Back-compat redirects from the previously-separate pages. */}
-          <Route path="/admin/leaves" element={<Navigate to="/approvals?tab=leave" replace />} />
-          <Route path="/pm/approvals" element={<Navigate to="/approvals" replace />} />
-        </Route>
-      </Route>
-
-      <Route element={<ProtectedRoute permissions={cmsPermissions} />}>
-        <Route element={<AppShell />}>
-          <Route path="/cms" element={<CmsPage />} />
-          <Route path="/cms/projects/:projectId/blogs" element={<ProjectBlogsPage />} />
-          <Route path="/cms/projects/:projectId/blogs/create" element={<CreateBlogPage />} />
-          <Route path="/cms/projects/:projectId/blogs/:blogId" element={<EditBlogPage />} />
-          <Route path="/cms/projects/:projectId/blogs/:blogId/preview" element={<BlogPreviewPage />} />
-          <Route path="/cms/projects/:projectId/templates" element={<ProjectTemplatesPage />} />
-          <Route path="/cms/projects/:projectId/settings" element={<ProjectSettingsPage />} />
-          <Route path="/cms/projects/:projectId/content-engine" element={<ProjectContentEnginePage />} />
-          <Route path="/cms/projects/:projectId/leads" element={<ProjectLeadsPage />} />
-        </Route>
-      </Route>
-
-      {/* Compliance / onboarding course admin (SUPER_ADMIN + ADMIN only) */}
-      <Route element={<ProtectedRoute roles={['SUPER_ADMIN', 'ADMIN']} />}>
-        <Route element={<AppShell />}>
-          <Route path="/compliance/courses" element={<ComplianceCourseListPage />} />
-          <Route path="/compliance/courses/:id" element={<ComplianceCourseDetailPage />} />
-          <Route path="/compliance/enrollments" element={<ComplianceEnrollmentsPage />} />
-          <Route path="/compliance/users/:userId" element={<UserOnboardingDetailPage />} />
-        </Route>
-      </Route>
-
-      {/* User-facing Confidentiality page — visible to every authenticated user.
-          The hard-blocking onboarding gate has been removed; this is the
-          discoverable surface where employees complete (or re-complete) their
-          assigned compliance courses. */}
-      <Route element={<ProtectedRoute />}>
-        <Route element={<AppShell />}>
-          <Route path="/confidentiality" element={<MyConfidentialityPage />} />
-        </Route>
-      </Route>
-
       <Route element={<ProtectedRoute permissions={['task.create']} />}>
         <Route element={<AppShell />}>
           <Route path="/projects/:projectId/tasks/new" element={<CreateTaskPage />} />
@@ -270,9 +147,6 @@ export function App() {
           {/* Triage Inbox — the morning ritual screen. Same RBAC gate as the
               portfolio dashboard since both surface the studio-wide attention items. */}
           <Route path="/inbox" element={<TriageInboxPage />} />
-          {/* Legacy admin overview kept under /dashboard/legacy for one release
-              while teams adapt to the new portfolio home. Safe to remove later. */}
-          <Route path="/dashboard/legacy" element={<AdminDashboardPage />} />
         </Route>
       </Route>
 
@@ -280,9 +154,7 @@ export function App() {
           distinct Activity-log surface. PR 2026-05-15 consolidated
           Activity + Today into the same combined page — the canonical
           URL is `/today` and `/activity` redirects there so old
-          bookmarks survive. The legacy ActivityFeedPage component still
-          exists in source; revive its route here if a future PR wants
-          the raw mutation log back as a separate page. */}
+          bookmarks survive. */}
       <Route element={<ProtectedRoute permissions={activityPermissions} />}>
         <Route element={<AppShell />}>
           <Route path="/activity" element={<Navigate to="/today" replace />} />
@@ -293,18 +165,6 @@ export function App() {
         <Route element={<AppShell />}>
           <Route path="/team" element={<TeamPage />} />
           <Route path="/standup" element={<StandupViewPage />} />
-          {/* /approvals lives in the combined-approvals block above —
-              don't redeclare it here or React Router picks the first
-              match and the redirect siblings would lose their parent. */}
-        </Route>
-      </Route>
-
-      <Route element={<ProtectedRoute permissions={['leads.view']} />}>
-        <Route element={<AppShell />}>
-          <Route path="/leads/:leadId" element={<LeadDetailPage />} />
-          {/* Legacy global-leads route — kept as a redirect to the CMS hub
-              now that leads live under each CMS project. */}
-          <Route path="/admin/leads" element={<Navigate to="/cms" replace />} />
         </Route>
       </Route>
 
@@ -346,11 +206,6 @@ export function App() {
       <Route element={<ProtectedRoute roles={['SUPER_ADMIN']} />}>
         <Route element={<AppShell />}>
           <Route path="/settings" element={<SystemSettingsPage />} />
-          <Route path="/pulse" element={<PulsePage />} />
-          {/* Pulse productivity-score reports (Wave 6). SUPER_ADMIN-only
-              per R5 lockdown — surface for composite scores, breakdowns,
-              weights, and worker health. */}
-          <Route path="/pulse/reports" element={<PulseReportsPage />} />
         </Route>
       </Route>
 
@@ -385,7 +240,6 @@ export function App() {
         <Route element={<AppShell />}>
           <Route path="/pm/standup" element={<StandupViewPage />} />
           <Route path="/pm/team" element={<TeamPage />} />
-          {/* /pm/approvals → /approvals redirect lives in the combined block above. */}
         </Route>
       </Route>
 
@@ -401,25 +255,9 @@ export function App() {
           <Route path="/eng/dashboard" element={<EngDashboardPage />} />
           <Route path="/eng/my-tasks" element={<MyTasksPage />} />
           <Route path="/eng/eod-update" element={<EODUpdatePage />} />
-          {/* /eng/timesheet → /my-time?tab=timesheet redirect lives in
-              the combined-personal block above. */}
           <Route path="/eng/projects/:id" element={<EngProjectBoardPage />} />
           <Route path="/eng/projects/:projectId/tasks/:taskId" element={<TaskDetailPage />} />
         </Route>
-      </Route>
-
-      {/*
-        Engineer-prefixed task-create URL is preserved as a transparent
-        forward to the canonical /projects/:projectId/tasks/new (which is
-        already gated by the `task.create` permission — engineers,
-        admins, and PMs all have it). Nothing in the app navigates here
-        today, but typed URLs and old bookmarks used to bounce non-
-        engineers to their dashboard; this keeps them landing on the
-        right page. ProtectedRoute is on the canonical route, not this
-        forward, so the forward is reachable to anyone authenticated.
-      */}
-      <Route element={<ProtectedRoute />}>
-        <Route path="/eng/projects/:projectId/tasks/new" element={<EngTaskCreateForward />} />
       </Route>
 
       {/*
@@ -460,7 +298,6 @@ export function App() {
           <Route path="/client/projects/:id/decisions" element={<ClientDecisionsPage />} />
           <Route path="/client/projects/:id/insights" element={<ClientInsightsPage />} />
           <Route path="/client/projects/:id/documents" element={<ClientDocumentsPage />} />
-          <Route path="/client/projects/:id/compliance" element={<ClientCompliancePage />} />
           <Route path="/client/projects/:id/activity" element={<ClientActivityPage />} />
           <Route path="/client/projects/:projectId/tasks/:taskId" element={<TaskDetailPage />} />
         </Route>
@@ -469,7 +306,6 @@ export function App() {
         {/* Catch-all */}
         <Route path="*" element={<RoleRedirect />} />
 
-        </Route>
       </Routes>
       </ConfirmProvider>
     </ErrorBoundary>

@@ -56,38 +56,6 @@ export const apiLimiter = rateLimit({
   handler: loggingHandler('apiLimiter'),
 });
 
-// Public CMS routes — anyone with the API key can call these from external
-// websites. Tighter ceiling than apiLimiter because there's no auth gate
-// upstream to attribute calls to a user; everything is per-IP. The limit
-// still allows legitimate consumer sites (a blog rendering 50 articles per
-// page-view, for example) plenty of headroom.
-export const publicCmsLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: env.NODE_ENV === 'development' ? 300 : 60,
-  message: { success: false, error: { code: 'RATE_LIMITED', message: 'Too many requests. If you\'re an integration, slow your polling.' } },
-  standardHeaders: true,
-  legacyHeaders: false,
-  handler: loggingHandler('publicCmsLimiter'),
-});
-
-// 2026-06-01 hardening — per-DEVICE telemetry ingest limiter. The Pulse
-// agent heartbeats every 5 min + snapshots hourly, so a healthy device
-// sends a handful of requests per hour. Keyed on the authenticated
-// device id (set by deviceAuthenticate, which runs first) rather than
-// IP, so a whole fleet behind one office NAT isn't throttled as a unit
-// AND a single compromised/buggy agent can't flood ingest. Generous
-// ceiling (120/5min) absorbs a reconnect storm without ever hitting a
-// well-behaved device.
-export const deviceTelemetryLimiter = rateLimit({
-  windowMs: 5 * 60 * 1000,
-  max: env.NODE_ENV === 'development' ? 600 : 120,
-  message: { success: false, error: { code: 'RATE_LIMITED', message: 'Telemetry rate exceeded. Back off and retry.' } },
-  standardHeaders: true,
-  legacyHeaders: false,
-  keyGenerator: (req) => (req as any).device?.id ?? req.ip ?? 'unknown',
-  handler: loggingHandler('deviceTelemetryLimiter'),
-});
-
 // Plan-ingest endpoint guard. /parse is CPU-bound (parses up to 500 KB of
 // markdown per call) so even an authenticated member could spam it (QA
 // I-L11). Tight ceiling per-window — real ingestion is a once-per-project

@@ -36,14 +36,6 @@ vi.mock('./activity.service', () => ({
   __esModule: true,
   logActivity: logActivitySpy,
 }));
-vi.mock('./course.service', () => ({
-  __esModule: true,
-  getMandatoryCoursesForRole: vi.fn().mockResolvedValue([]),
-}));
-vi.mock('./enrollment.service', () => ({
-  __esModule: true,
-  enrollUserInCourse: vi.fn().mockResolvedValue(undefined),
-}));
 vi.mock('../utils/password', () => ({
   __esModule: true,
   hashPassword: vi.fn(async (s: string) => `hashed:${s}`),
@@ -69,9 +61,6 @@ function userRow(id: string, role: UserRole, isActive = true) {
     lockedUntil: null,
     company: null,
     isSeedData: false,
-    onboardingRequired: false,
-    onboardingCompletedAt: null,
-    legalName: null,
     userType: 'HUMAN' as const,
     agentRole: null,
     agentSystemPromptPath: null,

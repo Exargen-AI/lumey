@@ -3,7 +3,7 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutGrid, GanttChart, Package, Lightbulb, BarChart3, FileText, Activity,
   LogOut, ChevronLeft, ChevronRight, ChevronDown, FolderOpen, KanbanSquare,
-  ShieldCheck, Boxes, HelpCircle, CalendarRange,
+  Boxes, HelpCircle, CalendarRange,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { useUIStore } from '@/stores/uiStore';
@@ -57,7 +57,6 @@ const PROJECT_SECTIONS: SectionItem[] = [
   { key: 'decisions',    label: 'Decisions',        suffix: '/decisions',    Icon: Lightbulb },
   { key: 'insights',     label: 'Insights',         suffix: '/insights',     Icon: BarChart3 },
   { key: 'documents',    label: 'Documents',        suffix: '/documents',    Icon: FileText },
-  { key: 'compliance',   label: 'Compliance',       suffix: '/compliance',   Icon: ShieldCheck },
   // PR 2026-05-15 collapsed Activity + the old Today wrap-up into one
   // page (today + this-week sections). URL stays /activity for
   // bookmark stability; label flips to "Today" so it matches what
@@ -110,11 +109,11 @@ export function ClientSidebar() {
         {sidebarOpen ? (
           <>
             <NavLink to="/client/dashboard" className="flex items-center gap-2.5 min-w-0 group">
-              <div className="w-7 h-7 rounded-lg overflow-hidden ring-1 ring-black/5 dark:ring-white/10 shrink-0">
-                <img src="/logo.jpeg" alt="Exargen" className="w-full h-full object-cover" />
+              <div className="w-7 h-7 rounded-lg overflow-hidden ring-1 ring-black/5 dark:ring-white/10 shrink-0 flex items-center justify-center bg-brand-600 text-white text-[13px] font-bold">
+                L
               </div>
               <div className="min-w-0">
-                <div className="text-[15px] font-semibold tracking-tight text-gray-900 dark:text-obsidian-fg leading-none truncate">Exargen</div>
+                <div className="text-[15px] font-semibold tracking-tight text-gray-900 dark:text-obsidian-fg leading-none truncate">Lumey</div>
                 <div className="text-[10px] font-medium uppercase tracking-[0.1em] text-gray-500 dark:text-obsidian-muted leading-none mt-1">Client Portal</div>
               </div>
             </NavLink>
@@ -132,10 +131,10 @@ export function ClientSidebar() {
           <Tooltip content="Expand sidebar" side="right">
             <button
               onClick={toggleSidebar}
-              className="w-9 h-9 rounded-lg overflow-hidden ring-1 ring-black/5 dark:ring-white/10 group relative"
+              className="w-9 h-9 rounded-lg overflow-hidden ring-1 ring-black/5 dark:ring-white/10 group relative flex items-center justify-center bg-brand-600 text-white text-[15px] font-bold"
               aria-label="Expand sidebar"
             >
-              <img src="/logo.jpeg" alt="Exargen" className="w-full h-full object-cover transition-opacity group-hover:opacity-40" />
+              <span className="transition-opacity group-hover:opacity-40">L</span>
               <ChevronRight size={14} className="absolute inset-0 m-auto text-white opacity-0 group-hover:opacity-100 transition-opacity" />
             </button>
           </Tooltip>

@@ -14,13 +14,8 @@ import { apiLimiter } from './middleware/rateLimiter';
 import { requireOrigin } from './middleware/requireOrigin';
 import { stripDangerousKeys } from './middleware/stripDangerousKeys';
 import prisma from './config/database';
-import { ensureCmsSchemaReady } from './services/cmsSchema.service';
 import { syncPermissionDefinitions } from './services/permissionSync.service';
-import { seedOnboardingCourse } from './seed/onboardingCourse.seed';
 import { seedAgentUsers } from './seed/agentUsers.seed';
-import { seedUniversalWeights } from './seed/seedUniversalWeights';
-import { scoreRecomputeWorker } from './scoring/recomputeWorker';
-import { autoCloseStaleSessions } from './services/clockSession.service';
 
 import authRoutes from './routes/auth.routes';
 import rbacRoutes from './routes/rbac.routes';
@@ -39,27 +34,16 @@ import analyticsRoutes from './routes/analytics.routes';
 import adminRoutes from './routes/admin.routes';
 import dailyUpdateRoutes from './routes/dailyUpdate.routes';
 import notificationRoutes from './routes/notification.routes';
-import timesheetRoutes from './routes/timesheet.routes';
 import sprintRoutes from './routes/sprint.routes';
 import customFieldRoutes from './routes/customField.routes';
-import cmsRoutes from './routes/cms.routes';
-import courseRoutes from './routes/course.routes';
 import agentRoutes from './routes/agent.routes';
-import devopsRoutes from './routes/devops.routes';
-import pulseRoutes from './routes/pulse.routes';
-import pulseScoreRoutes from './routes/pulseScore.routes';
 import githubIntegrationRoutes from './routes/githubIntegration.routes';
-import pulseGithubWebhookRoutes from './routes/pulseGithubWebhook.routes';
-import leaveRoutes from './routes/leave.routes';
 import projectIngestionRoutes from './routes/projectIngestion.routes';
 import projectForecastRoutes from './routes/projectForecast.routes';
 import clientActionsRoutes from './routes/clientActions.routes';
 import recentProgressRoutes from './routes/recentProgress.routes';
 import currentSprintRoutes from './routes/currentSprint.routes';
-import contentEngineRoutes from './routes/contentEngine.routes';
-import leadRoutes from './routes/lead.routes';
 import todayRoutes from './routes/today.routes';
-import clientComplianceRoutes from './routes/clientCompliance.routes';
 import openapiRoutes from './routes/openapi.routes';
 
 const app = express();
@@ -143,14 +127,6 @@ app.use('/api/v1/integrations/github/webhook', express.json({
   limit: '1mb',
   verify: (req, _res, buf) => { (req as unknown as { rawBody: Buffer }).rawBody = Buffer.from(buf); },
 }));
-// Pulse org-level GitHub webhook (Wave 3, PR #33). Separate from the
-// per-project webhook above — handles push / pull_request /
-// pull_request_review events for the CODE productivity signal across
-// the whole Exargen-AI org. Same raw-body-for-HMAC pattern.
-app.use('/api/v1/webhooks/github/pulse', express.json({
-  limit: '1mb',
-  verify: (req, _res, buf) => { (req as unknown as { rawBody: Buffer }).rawBody = Buffer.from(buf); },
-}));
 app.use(express.json({ limit: '25mb' }));
 // Defense-in-depth against prototype-pollution payloads. Sits AFTER all
 // JSON parsers (so it runs on every parsed body) and BEFORE any handler /
@@ -217,40 +193,24 @@ app.use('/api/v1/analytics', analyticsRoutes);
 app.use('/api/v1/admin', adminRoutes);
 app.use('/api/v1', dailyUpdateRoutes);
 app.use('/api/v1', notificationRoutes);
-app.use('/api/v1', timesheetRoutes);
 app.use('/api/v1', sprintRoutes);
 app.use('/api/v1', customFieldRoutes);
-app.use('/api/v1/cms', cmsRoutes);
-app.use('/api/v1', courseRoutes);
 app.use('/api/v1', agentRoutes);
-app.use('/api/v1', pulseRoutes);
-// Pulse productivity score (Wave 5) — SUPER_ADMIN composite score API.
-// Triple-gated (authenticate + requireRoles + requireProductivityScoreAccess)
-// inside the router itself, no extra middleware needed at mount-time.
-app.use('/api/v1', pulseScoreRoutes);
 // 2026-05-23 — OpenAPI spec serving. Mounted alongside the other API
 // routes at /api/v1/openapi.json + /api/v1/docs. Documents the agent
 // control plane endpoints (Layer 2) + extends to additional surfaces
 // as they're registered. Public — exposing the spec doesn't grant
 // access, just describes what's there.
 app.use('/api/v1', openapiRoutes);
-app.use('/api/v1', devopsRoutes);
 app.use('/api/v1', githubIntegrationRoutes);
-app.use('/api/v1', pulseGithubWebhookRoutes);
-app.use('/api/v1', leaveRoutes);
 app.use('/api/v1', projectIngestionRoutes);
 app.use('/api/v1', projectForecastRoutes);
 app.use('/api/v1', clientActionsRoutes);
 app.use('/api/v1', recentProgressRoutes);
 app.use('/api/v1', currentSprintRoutes);
-app.use('/api/v1/content-engine', contentEngineRoutes);
-app.use('/api/v1', leadRoutes);
 // "Done today" daily-wrap-up endpoint — role-aware visibility computed
 // inside the service.
 app.use('/api/v1', todayRoutes);
-// Client-facing compliance summary (per project). Service redacts
-// forensic detail; safe for any project member to call.
-app.use('/api/v1', clientComplianceRoutes);
 
 // Error handler (must be last)
 app.use(errorHandler);
@@ -264,11 +224,6 @@ const shutdown = async (signal?: string) => {
   if (shuttingDown) return;
   shuttingDown = true;
   logger.info({ signal }, 'shutting down gracefully');
-  // Stop the productivity score recompute worker BEFORE closing the
-  // server so an in-flight cycle can't try to write to a closing
-  // prisma client. stop() is a synchronous timer-clear; safe to call
-  // even if start() was a no-op (flag off).
-  scoreRecomputeWorker.stop();
   // 2026-06-01 hardening — DRAIN in-flight requests before tearing down
   // the DB. Previously `server.close()` was fire-and-forget and
   // `prisma.$disconnect()` + `process.exit(0)` ran immediately, killing
@@ -289,26 +244,12 @@ const shutdown = async (signal?: string) => {
 };
 
 async function bootstrap() {
-  await ensureCmsSchemaReady();
-
   // Idempotently sync the permission catalog so newly-introduced permissions
   // (e.g. the deliverable.* set) land in production without manual seeding.
   // Only inserts rows that don't yet exist — admin RBAC tweaks are preserved.
   const permSync = await syncPermissionDefinitions();
   if (permSync.inserted > 0) {
     logger.info({ inserted: permSync.inserted, total: permSync.total }, 'permission sync');
-  }
-
-  // Idempotently ensure the v1 employee onboarding course exists. The seed
-  // checks by slug and skips if a row is already present, so this is safe to
-  // call on every boot. Runs in best-effort mode — a seed failure is logged
-  // but does not block server startup. The legal text is PLACEHOLDER and is
-  // expected to be replaced via the admin UI (Compliance → Course Detail →
-  // Edit text), which bumps the course version + re-prompts every employee.
-  try {
-    await seedOnboardingCourse();
-  } catch (err) {
-    logger.warn({ err }, 'onboarding course seed failed (non-fatal)');
   }
 
   // Idempotently provision Manjari (the v1 agent user) if MANJARI_PASSWORD
@@ -321,63 +262,6 @@ async function bootstrap() {
   } catch (err) {
     logger.warn({ err }, 'agent user seed failed (non-fatal)');
   }
-
-  // Pulse productivity score (Wave 5) — best-effort universal weights
-  // seed + recompute worker boot. Seed bails silently on brand-new DBs
-  // before a SUPER_ADMIN exists; worker.start() no-ops if the feature
-  // flag is off. Both are non-fatal: a failure here logs but does not
-  // block server startup.
-  try {
-    await seedUniversalWeights(prisma);
-  } catch (err) {
-    logger.warn({ err }, 'universal weights seed failed (non-fatal)');
-  }
-  try {
-    scoreRecomputeWorker.start();
-  } catch (err) {
-    logger.warn({ err }, 'scoreRecomputeWorker.start failed (non-fatal)');
-  }
-
-  // Wave 11 — Clock auto-close sweep (every 15 min).
-  //
-  // Clock sessions open for >12h get an autoClosedAt timestamp so
-  // forgot-to-clock-out cases stop polluting "today's total" + the
-  // PRESENCE outbox emit fires inside `autoCloseStaleSessions` so the
-  // user still gets credit for the work they did. Previously this
-  // function was DEAD CODE — defined in the service but never invoked
-  // — which meant abandoned sessions stayed open forever and the
-  // PRESENCE event never fired.
-  //
-  // Wave 12 — added an in-flight guard so two sweeps can't overlap.
-  // The sweep does N per-session transactions; on a fleet with 200
-  // stale sessions + a contended DB pool, a single sweep could
-  // theoretically exceed the 15-min cadence. Without the guard,
-  // overlap means the second sweep re-fetches the same `stale` rows
-  // (the first one hasn't committed `autoClosedAt` yet) and emits
-  // duplicate PRESENCE events. The dedupe key (source='clock_sessions',
-  // sourceId=id, eventType='clock.session_closed') would catch most
-  // of those at the outbox, but the wasted work is real.
-  //
-  // The interval is .unref()-safe so SIGTERM doesn't hang on a
-  // pending tick.
-  const AUTO_CLOSE_SWEEP_MS = 15 * 60 * 1000;
-  let autoCloseInFlight = false;
-  const runAutoCloseSweep = async () => {
-    if (autoCloseInFlight) return; // skip — previous sweep still running
-    autoCloseInFlight = true;
-    try {
-      await autoCloseStaleSessions();
-    } catch (err) {
-      logger.warn({ err }, 'autoCloseStaleSessions failed (non-fatal)');
-    } finally {
-      autoCloseInFlight = false;
-    }
-  };
-  // Fire once on boot so a process that's been down for hours catches
-  // up immediately; then settle into the interval.
-  void runAutoCloseSweep();
-  const autoCloseHandle = setInterval(() => void runAutoCloseSweep(), AUTO_CLOSE_SWEEP_MS);
-  if (typeof autoCloseHandle.unref === 'function') autoCloseHandle.unref();
 
   server = app.listen(env.PORT, () => {
     logger.info({ port: env.PORT, env: env.NODE_ENV }, 'server listening');

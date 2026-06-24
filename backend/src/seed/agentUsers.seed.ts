@@ -66,10 +66,6 @@ export async function seedAgentUsers() {
         agentSystemPromptPath: '~/exargen/manjari',
         agentBudgetMonthlyUsdCents: 50_000, // $500/mo default; tunable from admin UI
         agentActive: true,
-        // Agents skip the mandatory onboarding course — they're not signing
-        // confidentiality docs themselves; Sentiens signs on the platform's
-        // behalf out-of-band.
-        onboardingRequired: false,
       },
     });
     manjariId = manjari.id;

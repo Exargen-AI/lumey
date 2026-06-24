@@ -5,10 +5,7 @@ import { hashPassword } from '../utils/password';
 import { NotFoundError, ConflictError, ForbiddenError } from '../utils/errors';
 import { normalizeEmail } from '../utils/email';
 import { logActivity } from './activity.service';
-import { getMandatoryCoursesForRole } from './course.service';
-import { enrollUserInCourse } from './enrollment.service';
 import { viewerCanSeeAgents } from '../lib/agentVisibility';
-import { logger } from '../lib/logger';
 
 /**
  * Super-admin armor.
@@ -190,12 +187,6 @@ export async function createUser(data: any, actingUserId: string) {
 
   const passwordHash = await hashPassword(data.password);
 
-  // Onboarding: Clients are external (no NDA). Agents are autonomous code
-  // executors and don't sign confidentiality docs themselves — Sentiens
-  // signs on the platform's behalf out-of-band. For everyone else
-  // (engineer, PM, admin, super_admin) we require onboarding and auto-enroll.
-  const onboardingRequired = !isAgent && data.role !== 'CLIENT';
-
   const user = await prisma.user.create({
     data: {
       name: data.name,
@@ -203,7 +194,6 @@ export async function createUser(data: any, actingUserId: string) {
       passwordHash,
       role: data.role,
       company: data.company || null,
-      onboardingRequired,
       // Agent-platform fields. For humans these stay at their defaults
       // (userType=HUMAN, agent* nullable/zero/true).
       userType: isAgent ? 'AGENT' : 'HUMAN',
@@ -228,25 +218,10 @@ export async function createUser(data: any, actingUserId: string) {
     });
   }
 
-  // Auto-enroll in every published mandatory course whose `applicableRoles`
-  // includes this user's role. Best-effort — we don't fail user creation if
-  // enrollment fails; admin can re-trigger from the audit page. Agents are
-  // skipped via the `onboardingRequired` flag set above.
-  if (onboardingRequired) {
-    try {
-      const courses = await getMandatoryCoursesForRole(user.role);
-      for (const course of courses) {
-        await enrollUserInCourse(user.id, course.id);
-      }
-    } catch (err) {
-      logger.error({ err, userId: user.id }, 'auto-enrollment failed');
-    }
-  }
-
   await logActivity({
     userId: actingUserId, action: 'created_user',
     targetType: 'user', targetId: user.id,
-    details: { name: user.name, role: user.role, userType: user.userType, agentRole: user.agentRole, onboardingRequired },
+    details: { name: user.name, role: user.role, userType: user.userType, agentRole: user.agentRole },
   });
 
   const { passwordHash: _, ...userWithoutPassword } = user;

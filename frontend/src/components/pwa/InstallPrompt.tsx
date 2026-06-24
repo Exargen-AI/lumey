@@ -190,7 +190,7 @@ export function InstallPrompt() {
             <li className="flex items-start gap-3">
               <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-brand-50 dark:bg-brand-500/15 text-brand-700 dark:text-brand-300 text-[12px] font-semibold shrink-0">3</span>
               <span className="flex-1">
-                Tap <span className="font-medium">Add</span> in the top corner. Exargen will open fullscreen from your home screen.
+                Tap <span className="font-medium">Add</span> in the top corner. Lumey will open fullscreen from your home screen.
               </span>
             </li>
           </ol>
@@ -222,14 +222,14 @@ export function InstallPrompt() {
         'p-3 flex items-center gap-3 animate-fade-in-up',
       )}
       role="region"
-      aria-label="Install Exargen on your home screen"
+      aria-label="Install Lumey on your home screen"
     >
       <div className="w-10 h-10 rounded-lg bg-brand-100 dark:bg-brand-500/20 flex items-center justify-center shrink-0">
         <Download size={16} className="text-brand-700 dark:text-brand-300" />
       </div>
       <div className="min-w-0 flex-1">
         <p className="text-[13px] font-semibold text-gray-900 dark:text-obsidian-fg leading-tight">
-          Install Exargen
+          Install Lumey
         </p>
         <p className="text-[11.5px] text-gray-500 dark:text-obsidian-muted leading-snug mt-0.5">
           Add it to your home screen for a faster, fullscreen experience.

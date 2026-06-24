@@ -237,7 +237,7 @@ export function ClientHelpPage() {
               that doesn’t fit a specific surface, drop us an email and we’ll get back the same day.
             </p>
             <a
-              href="mailto:support@exargen.ai"
+              href="mailto:support@lumey.ai"
               className={cn(
                 'mt-3 inline-flex items-center gap-2 text-[13px] font-medium',
                 'text-brand-700 dark:text-brand-300 hover:text-brand-800 dark:hover:text-brand-200',
@@ -245,7 +245,7 @@ export function ClientHelpPage() {
               )}
             >
               <Mail size={14} />
-              support@exargen.ai
+              support@lumey.ai
             </a>
           </div>
         </div>

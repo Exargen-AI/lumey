@@ -31,7 +31,7 @@ interface Props {
 export function ProjectAcknowledgmentGate({ projectId, refuseRedirect, projectName, children }: Props) {
   const user = useAuthStore((s) => s.user);
   // Founder/owner bypass. The acknowledgment exists to record that staff,
-  // contractors, and clients have agreed to Exargen's confidentiality
+  // contractors, and clients have agreed to Lumey's confidentiality
   // terms BEFORE seeing internal project material. The SUPER_ADMIN IS
   // the company — asking them to "agree" to confidentiality with
   // themselves is a UX bug and a circular legal artifact (their consent

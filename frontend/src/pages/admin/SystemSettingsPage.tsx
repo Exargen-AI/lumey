@@ -31,7 +31,7 @@ export function SystemSettingsPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `exargen-export-${new Date().toLocaleDateString('en-CA')}.json`;
+      a.download = `lumey-export-${new Date().toLocaleDateString('en-CA')}.json`;
       a.click();
       URL.revokeObjectURL(url);
     },

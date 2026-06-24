@@ -497,7 +497,7 @@ describe('removeProjectMember — orphan cleanup (assignee + reviewer) + notify'
 // ─── deleteProject — billing-safety gate + member notification ─────────
 //     (2026-05-15 project-delete audit)
 
-describe('deleteProject — refuse on time-entries (Bug A) + notify members (Bug C)', () => {
+describe('deleteProject — notify members (Bug C)', () => {
   beforeEach(() => {
     prismaMock.project.findUnique.mockResolvedValue({
       id: 'proj-1',
@@ -510,51 +510,10 @@ describe('deleteProject — refuse on time-entries (Bug A) + notify members (Bug
     prismaMock.project.findUnique.mockResolvedValue(null as any);
 
     await expect(deleteProject('p-gone', 'admin-1')).rejects.toBeInstanceOf(NotFoundError);
-    expect(prismaMock.timeEntry.count).not.toHaveBeenCalled();
     expect(prismaMock.project.delete).not.toHaveBeenCalled();
   });
 
-  /**
-   * THE PIVOTAL BUG REPRO. Pre-fix this call would proceed and
-   * the cascade would atomically destroy every billable hour
-   * logged against this project — including hours that had been
-   * approved and invoiced.
-   */
-  it('THROWS ConflictError when the project has ANY time entries (the billing-safety gate)', async () => {
-    prismaMock.timeEntry.count.mockResolvedValue(247);
-
-    await expect(deleteProject('proj-1', 'admin-1')).rejects.toBeInstanceOf(ConflictError);
-
-    // CRITICAL: the delete must NOT have fired.
-    expect(prismaMock.project.delete).not.toHaveBeenCalled();
-    expect(notifyProjectDeletedSpy).not.toHaveBeenCalled();
-  });
-
-  it('inlines the time-entry count in the error message so the admin sees the impact', async () => {
-    prismaMock.timeEntry.count.mockResolvedValue(247);
-
-    try {
-      await deleteProject('proj-1', 'admin-1');
-    } catch (err: any) {
-      // Verify the message tells the admin WHY and the count.
-      expect(err.message).toContain('247');
-      expect(err.message).toContain('time entries');
-    }
-  });
-
-  it('uses singular grammar when there\'s exactly one time entry', async () => {
-    prismaMock.timeEntry.count.mockResolvedValue(1);
-
-    try {
-      await deleteProject('proj-1', 'admin-1');
-    } catch (err: any) {
-      // "1 time entry" — not "1 time entries"
-      expect(err.message).toMatch(/1 time entry\b/);
-    }
-  });
-
-  it('PROCEEDS with delete + notification when there are zero time entries', async () => {
-    prismaMock.timeEntry.count.mockResolvedValue(0);
+  it('PROCEEDS with delete + notification', async () => {
     prismaMock.projectMember.findMany.mockResolvedValue([
       { userId: 'member-1' },
       { userId: 'member-2' },
@@ -572,7 +531,6 @@ describe('deleteProject — refuse on time-entries (Bug A) + notify members (Bug
   });
 
   it('writes the deleted_project activity row WITHOUT setting projectId (so it survives the cascade)', async () => {
-    prismaMock.timeEntry.count.mockResolvedValue(0);
     prismaMock.projectMember.findMany.mockResolvedValue([] as any);
 
     await deleteProject('proj-1', 'admin-1');
@@ -597,7 +555,6 @@ describe('deleteProject — refuse on time-entries (Bug A) + notify members (Bug
   });
 
   it('SKIPS the notification fan-out when the project has no members', async () => {
-    prismaMock.timeEntry.count.mockResolvedValue(0);
     prismaMock.projectMember.findMany.mockResolvedValue([] as any);
 
     await deleteProject('proj-1', 'admin-1');
@@ -607,7 +564,6 @@ describe('deleteProject — refuse on time-entries (Bug A) + notify members (Bug
   });
 
   it('does NOT BLOCK the delete on notification failure (fire-and-forget)', async () => {
-    prismaMock.timeEntry.count.mockResolvedValue(0);
     prismaMock.projectMember.findMany.mockResolvedValue([{ userId: 'member-1' }] as any);
     notifyProjectDeletedSpy.mockRejectedValue(new Error('notify down'));
 
@@ -619,7 +575,6 @@ describe('deleteProject — refuse on time-entries (Bug A) + notify members (Bug
     // Verify the projectMember.findMany call happens BEFORE
     // prisma.project.delete — otherwise the cascade would have
     // already destroyed the ProjectMember rows by the time we look.
-    prismaMock.timeEntry.count.mockResolvedValue(0);
     prismaMock.projectMember.findMany.mockResolvedValue([{ userId: 'member-1' }] as any);
 
     await deleteProject('proj-1', 'admin-1');

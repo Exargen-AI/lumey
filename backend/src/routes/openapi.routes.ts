@@ -4,7 +4,6 @@ import { buildOpenApiDocument } from '../openapi/registry';
 // Side-effect imports: each path file registers its operations into the
 // global registry. Add new path files here as more endpoints are documented.
 import '../openapi/agent.paths';
-import '../openapi/pulse.paths';
 
 /**
  * 2026-05-23 — OpenAPI spec serving routes.

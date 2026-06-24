@@ -90,40 +90,8 @@ export const PERMISSIONS = {
   DOCUMENT_READ: 'document.read',
   DOCUMENT_DELETE: 'document.delete',
 
-  // CMS (Headless Content Management System)
-  CMS_PROJECT_CREATE: 'cms.project.create',
-  CMS_PROJECT_EDIT: 'cms.project.edit',
-  CMS_PROJECT_DELETE: 'cms.project.delete',
-  CMS_PROJECT_VIEW: 'cms.project.view',
-  CMS_BLOG_CREATE: 'cms.blog.create',
-  CMS_BLOG_EDIT: 'cms.blog.edit',
-  CMS_BLOG_DELETE: 'cms.blog.delete',
-  CMS_BLOG_PUBLISH: 'cms.blog.publish',
-  CMS_BLOG_VIEW: 'cms.blog.view',
-  CMS_TEMPLATE_CREATE: 'cms.template.create',
-  CMS_TEMPLATE_EDIT: 'cms.template.edit',
-  CMS_TEMPLATE_DELETE: 'cms.template.delete',
-  CMS_TEMPLATE_VIEW: 'cms.template.view',
-  CMS_MEDIA_VIEW: 'cms.media.view',
-  CMS_MEDIA_UPLOAD: 'cms.media.upload',
-  CMS_MEDIA_DELETE: 'cms.media.delete',
-
-  // DevelopmentOps
-  DEVOPS_READ: 'devops.read',
-  DEVOPS_MANAGE: 'devops.manage',
-
   // Integrations (GitHub, Slack — third-party systems wired to a project)
   INTEGRATION_MANAGE: 'integration.manage',
-
-  // Content Engine (AI-powered trend discovery + blog generation)
-  CMS_CONTENT_ENGINE_USE: 'cms.content_engine.use',
-  // Project API key — view (masked + copy) vs manage (regenerate + scopes)
-  CMS_APIKEY_VIEW: 'cms.apikey.view',
-  CMS_APIKEY_MANAGE: 'cms.apikey.manage',
-  // Leads (external website submissions)
-  LEADS_VIEW: 'leads.view',
-  LEADS_MANAGE: 'leads.manage',
-  LEADS_INGEST: 'leads.ingest',
 } as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];

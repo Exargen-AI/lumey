@@ -181,14 +181,14 @@ export function GitHubIntegrationCard({ projectId }: Props) {
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="Repo owner" hint="The username or organisation that owns the repo">
-              <Input value={repoOwner} onChange={(e) => setRepoOwner(e.target.value)} placeholder="exargen" autoFocus />
+              <Input value={repoOwner} onChange={(e) => setRepoOwner(e.target.value)} placeholder="acme" autoFocus />
             </Field>
             <Field label="Repo name" hint="Just the repo name, no slashes">
-              <Input value={repoName} onChange={(e) => setRepoName(e.target.value)} placeholder="furix" />
+              <Input value={repoName} onChange={(e) => setRepoName(e.target.value)} placeholder="my-repo" />
             </Field>
           </div>
           <p className="text-[11.5px] text-gray-500 dark:text-obsidian-muted -mt-1">
-            For <code className="text-[11px] bg-gray-100 dark:bg-obsidian-raised px-1 py-0.5 rounded">github.com/exargen/furix</code> the owner is <code className="text-[11px] bg-gray-100 dark:bg-obsidian-raised px-1 py-0.5 rounded">exargen</code> and the name is <code className="text-[11px] bg-gray-100 dark:bg-obsidian-raised px-1 py-0.5 rounded">furix</code>.
+            For <code className="text-[11px] bg-gray-100 dark:bg-obsidian-raised px-1 py-0.5 rounded">github.com/acme/my-repo</code> the owner is <code className="text-[11px] bg-gray-100 dark:bg-obsidian-raised px-1 py-0.5 rounded">acme</code> and the name is <code className="text-[11px] bg-gray-100 dark:bg-obsidian-raised px-1 py-0.5 rounded">my-repo</code>.
           </p>
           <label className="flex items-center gap-2 cursor-pointer text-[12.5px] text-gray-700 dark:text-obsidian-fg select-none">
             <input

@@ -334,28 +334,6 @@ export async function getResourceAllocation() {
     },
   });
 
-  // Get hours logged this week for each user
-  const now = new Date();
-  const day = now.getDay();
-  const monday = new Date(now);
-  monday.setDate(monday.getDate() - day + (day === 0 ? -6 : 1));
-  monday.setHours(0, 0, 0, 0);
-  const sunday = new Date(monday);
-  sunday.setDate(sunday.getDate() + 7);
-
-  const weekEntries = await prisma.timeEntry.findMany({
-    where: { date: { gte: monday, lt: sunday } },
-    select: { userId: true, projectId: true, hours: true },
-  });
-
-  // Build hours map: userId -> projectId -> hours
-  const hoursMap = new Map<string, Map<string, number>>();
-  weekEntries.forEach((e) => {
-    if (!hoursMap.has(e.userId)) hoursMap.set(e.userId, new Map());
-    const userMap = hoursMap.get(e.userId)!;
-    userMap.set(e.projectId, (userMap.get(e.projectId) || 0) + e.hours);
-  });
-
   // Collect all projects
   const allProjects = new Map<string, string>();
   users.forEach((u) => {
@@ -365,8 +343,7 @@ export async function getResourceAllocation() {
 
   return {
     users: users.map((u) => {
-      const userHours = hoursMap.get(u.id) || new Map();
-      const totalHoursThisWeek = Array.from(userHours.values()).reduce((sum, h) => sum + h, 0);
+      const totalHoursThisWeek = 0;
       const totalTasks = u.assignedTasks.length;
 
       // Per-project breakdown
@@ -376,7 +353,7 @@ export async function getResourceAllocation() {
           projectId: pid,
           projectName: pname,
           tasks: u.assignedTasks.filter((t) => t.projectId === pid).length,
-          hoursThisWeek: userHours.get(pid) || 0,
+          hoursThisWeek: 0,
         }));
 
       return {
@@ -385,7 +362,7 @@ export async function getResourceAllocation() {
         role: u.role,
         totalTasks,
         totalHoursThisWeek,
-        capacityPct: Math.round((totalHoursThisWeek / 40) * 100),
+        capacityPct: 0,
         projects: projectAllocation,
       };
     }),

@@ -119,7 +119,6 @@ describe('createComment — @-mention extraction (natural typing fix)', () => {
     // transactional client.
     (prismaMock.$transaction as any).mockImplementation(async (cb: any) => cb(prismaMock));
     prismaMock.comment.findFirst.mockResolvedValue(null); // no prior thread comments
-    prismaMock.productivityEvent.createMany.mockResolvedValue({ count: 0 } as any);
   });
 
   /**
@@ -643,7 +642,6 @@ describe('createComment — story_update path', () => {
     } as any);
     (prismaMock.$transaction as any).mockImplementation(async (cb: any) => cb(prismaMock));
     prismaMock.comment.findFirst.mockResolvedValue(null);
-    prismaMock.productivityEvent.createMany.mockResolvedValue({ count: 0 } as any);
     prismaMock.taskSubscription.findMany.mockResolvedValue([] as any);
     // Serves both the @-mention scan and the client-recipient lookup.
     prismaMock.projectMember.findMany.mockResolvedValue([

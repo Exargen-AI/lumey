@@ -44,8 +44,8 @@ export function LoginPage() {
       <div className="relative w-full max-w-md animate-fade-in-up">
         {/* Brand mark + heading */}
         <div className="text-center mb-7">
-          <div className="inline-flex w-14 h-14 rounded-2xl overflow-hidden ring-1 ring-black/5 dark:ring-white/10 shadow-lift dark:shadow-lift-dark mb-4">
-            <img src="/logo.jpeg" alt="Exargen" className="w-full h-full object-cover" />
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl overflow-hidden ring-1 ring-black/5 dark:ring-white/10 shadow-lift dark:shadow-lift-dark mb-4 bg-brand-600 text-white text-2xl font-bold">
+            L
           </div>
           <h1 className="text-2xl font-semibold tracking-tight text-gray-900 dark:text-obsidian-fg">
             Welcome back
@@ -82,7 +82,7 @@ export function LoginPage() {
               type="email"
               value={email}
               onChange={setEmail}
-              placeholder="you@exargen.in"
+              placeholder="you@lumey.in"
               autoComplete="email"
               required
             />

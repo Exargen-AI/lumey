@@ -5,7 +5,6 @@ import { seedProjects } from './projects.seed';
 import { seedTasks } from './tasks.seed';
 import { seedMilestones } from './milestones.seed';
 import { seedDecisions } from './decisions.seed';
-import { seedOnboardingCourse } from './onboardingCourse.seed';
 import { seedAgentUsers } from './agentUsers.seed';
 import { isProductionEnvironment } from './safety';
 
@@ -57,11 +56,7 @@ async function seedReferenceData() {
   // 1. Seed permissions and role mappings
   await seedPermissions();
 
-  // 2. Seed the mandatory onboarding course BEFORE users — so user creation
-  // (in seedUsers) can auto-enroll new hires into it. Idempotent.
-  await seedOnboardingCourse();
-
-  // 3. Seed agent users (Manjari). Idempotent + skips silently if
+  // 2. Seed agent users (Manjari). Idempotent + skips silently if
   // MANJARI_PASSWORD env var is not set, so this is safe to run in
   // production too — without the secret, nothing happens.
   await seedAgentUsers();

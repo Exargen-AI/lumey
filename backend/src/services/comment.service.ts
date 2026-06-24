@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { UserRole } from '@prisma/client';
 import prisma from '../config/database';
 import { COMMENT_LIST_CAP } from '../constants/listLimits';
@@ -13,7 +12,6 @@ import {
 import { checkPermission, canViewProjectInternal } from './rbac.service';
 import { subscribeToTask, getSubscriberIdsForNotify } from './taskSubscription.service';
 import { viewerCanSeeAgents } from '../lib/agentVisibility';
-import { emitProductivityEvent, emitProductivityEvents } from '../lib/productivityOutbox';
 import { logger } from '../lib/logger';
 
 /**
@@ -214,25 +212,11 @@ export async function createComment(projectId: string, data: any, userId: string
     }
   }
 
-  // ── Pulse COMMUNICATION productivity-score wiring (Wave 4) ────────
-  // Pre-compute the fields needed for the outbox payload BEFORE the
-  // transaction opens. Mention parsing reads project membership rows
-  // so it can run outside the tx without changing correctness.
+  // Parse @-mentions up front (reads project membership rows) so the
+  // notification fan-out below can target mentioned members.
   const mentionedIds = await findMentionedMemberIds(projectId, data.content);
   mentionedIds.delete(userId); // self-skip
 
-  // Substantive-comment guard: <20 chars → flag at write time so the
-  // scorer can ignore without re-running the check.
-  const contentLen = data.content.trim().length;
-  const MIN_COMMENT_CHARS = 20;
-  const contentHash = createHash('sha256')
-    .update(data.content.trim().toLowerCase())
-    .digest('hex')
-    .slice(0, 16);
-
-  // Detect thread participation: are there already comments on the
-  // same task/milestone authored by other people? We check inside the
-  // transaction so the read sees a consistent snapshot.
   const comment = await prisma.$transaction(async (tx) => {
     const inner = await tx.comment.create({
       data: {
@@ -248,89 +232,6 @@ export async function createComment(projectId: string, data: any, userId: string
         author: { select: { id: true, name: true, role: true } },
       },
     });
-
-    // Thread-participation check: any prior comment by someone else
-    // on this scope before our own?
-    let isThreadParticipation = false;
-    if (data.taskId) {
-      const priorOther = await tx.comment.findFirst({
-        where: {
-          taskId: data.taskId,
-          authorId: { not: userId },
-          createdAt: { lt: inner.createdAt },
-        },
-        select: { id: true },
-      });
-      isThreadParticipation = priorOther !== null;
-    } else if (data.milestoneId) {
-      const priorOther = await tx.comment.findFirst({
-        where: {
-          milestoneId: data.milestoneId,
-          authorId: { not: userId },
-          createdAt: { lt: inner.createdAt },
-        },
-        select: { id: true },
-      });
-      isThreadParticipation = priorOther !== null;
-    }
-
-    // Author's COMMUNICATION event. Gaming-flag at write time when
-    // the body is below the substantive threshold.
-    await emitProductivityEvent(tx, {
-      userId,
-      signal: 'COMMUNICATION',
-      eventType: 'comment.created',
-      occurredAt: inner.createdAt,
-      rawPayload: {
-        commentId: inner.id,
-        contentLength: contentLen,
-        contentHash,
-        taskId: data.taskId || null,
-        milestoneId: data.milestoneId || null,
-        mentionsSentCount: mentionedIds.size,
-        isThreadParticipation,
-      },
-      source: 'comments',
-      sourceId: inner.id,
-      gamingFlag: contentLen < MIN_COMMENT_CHARS ? 'comment_too_short' : undefined,
-    });
-
-    // One mention.sent event per recipient (so the author's "bringing
-    // people in" count scales). One mention.received event per
-    // recipient (for the recipient's COMMUNICATION score).
-    if (mentionedIds.size > 0) {
-      const mentions = Array.from(mentionedIds);
-      const sentEvents = mentions.map((recipientId) => ({
-        userId,
-        signal: 'COMMUNICATION' as const,
-        eventType: 'mention.sent',
-        occurredAt: inner.createdAt,
-        rawPayload: {
-          commentId: inner.id,
-          taskId: data.taskId || null,
-          milestoneId: data.milestoneId || null,
-          recipientCount: 1,
-          recipientUserId: recipientId,
-        },
-        source: 'comments',
-        sourceId: `mention-sent-${inner.id}-${recipientId}`,
-      }));
-      const receivedEvents = mentions.map((recipientId) => ({
-        userId: recipientId,
-        signal: 'COMMUNICATION' as const,
-        eventType: 'mention.received',
-        occurredAt: inner.createdAt,
-        rawPayload: {
-          commentId: inner.id,
-          taskId: data.taskId || null,
-          milestoneId: data.milestoneId || null,
-          authorUserId: userId,
-        },
-        source: 'comments',
-        sourceId: `mention-received-${inner.id}-${recipientId}`,
-      }));
-      await emitProductivityEvents(tx, [...sentEvents, ...receivedEvents]);
-    }
 
     return inner;
   });

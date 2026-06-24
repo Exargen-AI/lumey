@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
 /**
- * Smoke-test config for the Exargen Command Center frontend.
+ * Smoke-test config for the Lumey Command Center frontend.
  *
  * Assumes:
  *   - Frontend dev server running at http://localhost:5174 (Vite default in

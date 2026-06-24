@@ -296,40 +296,6 @@ export async function deleteProject(projectId: string, userId: string) {
   const project = await prisma.project.findUnique({ where: { id: projectId } });
   if (!project) throw new NotFoundError('Project');
 
-  // ── 2026-05-15 project-deletion audit (Bug A — billing safety gate) ──
-  //
-  // The schema has `onDelete: Cascade` on every Project relation
-  // including `TimeEntry.projectId`. That means a hard delete here
-  // ATOMICALLY destroys every billable hour ever logged on this
-  // project — including hours that have been approved + invoiced.
-  // The audit row at the org level survives (it has no projectId
-  // FK), but the per-week TimesheetWeek snapshots become
-  // disconnected from reality, and the per-entry detail is gone.
-  //
-  // For a real billing system this is unrecoverable data loss.
-  //
-  // The minimal-disruption fix: refuse delete when any TimeEntry
-  // exists. If an admin genuinely wants to wipe a project, they
-  // can manually purge time entries first (which itself goes
-  // through approval-gates per the timesheet audit). This is a
-  // paper-cut for the rare "delete a never-used test project"
-  // case (zero entries → delete proceeds), but it's the right
-  // default — destructive ops should not silently destroy billing
-  // history.
-  //
-  // The longer-term fix is a soft-delete/archive flag on Project
-  // so admins can hide projects without destroying data. That's
-  // a schema change + migration + read-path updates throughout
-  // the codebase, queued as a follow-up product decision.
-  const timeEntryCount = await prisma.timeEntry.count({ where: { projectId } });
-  if (timeEntryCount > 0) {
-    throw new ConflictError(
-      `Cannot delete this project — it has ${timeEntryCount} time ${
-        timeEntryCount === 1 ? 'entry' : 'entries'
-      } logged against it. Time-entry deletion is the wrong tool for closing out a project; archiving (when supported) is the right path.`,
-    );
-  }
-
   // ── Capture member IDs BEFORE the delete so we can notify them ──
   // after the tx commits. The cascade will destroy ProjectMember
   // rows along with everything else, so we need to read this first.
