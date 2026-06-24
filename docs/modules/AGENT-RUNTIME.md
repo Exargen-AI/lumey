@@ -590,9 +590,35 @@ concurrency caps).
 in-flight tracking; `failInterruptedRuns` reaps RUNNING; `cancelRun` delegates to
 the run's adapter; `startRun` returns immediately and dispatches.
 
-## Next — beyond M2.14
+## M2.15 — GitHub App installation-token auth (short-lived credentials)
 
-**Installation-token auth** (a GitHub App over the deployment PAT), then
-**memory** (cross-run) and **Outcomes** (rubric-graded iterate→grade). Full
-build plan:
+The deployment PAT gives way to **short-lived, auto-rotating** GitHub App
+installation tokens — the right credential for an automated agent. Code:
+`runtime/git/githubAppAuth.ts` + `adapters/native.ts`.
+
+- **`signAppJwt`** — an RS256 App JWT signed with the App's private key, via
+  Node `crypto` (no Octokit, no JWT dependency).
+- **`createInstallationTokenSource`** — the flow over raw HTTPS: sign JWT → look
+  up the repo's installation → exchange for a ≈1h installation access token,
+  **cached per repo** until shortly before expiry.
+- **Precedence** — the native adapter prefers an App token (when
+  `LUMEY_GITHUB_APP_ID` + `LUMEY_GITHUB_APP_PRIVATE_KEY` are set), falling back to
+  `LUMEY_GITHUB_TOKEN` (PAT) — used uniformly for the workspace clone *and* the
+  PR provider. An App-token failure logs and degrades to the PAT.
+
+**Scope (MoSCoW):** Must ✅ (RS256 JWT; installation lookup + token mint;
+per-repo cache; native precedence/fallback; tests) · Should ✅ (clock-injectable
+cache; GitHub Enterprise base-url override; `\n`-escaped PEM handling) · Won't
+this increment (an installations webhook to pre-warm tokens; multiple Apps;
+secret storage beyond env).
+
+**Tests** (generated RSA key, injected fetch + clock, no network): the JWT is a
+verifiable RS256 token with App claims; the source looks up the installation and
+mints a Bearer-JWT token; caches until expiry; throws on a failed lookup;
+requires appId/privateKey.
+
+## Next — beyond M2.15
+
+**Memory** (cross-run agent memory) and **Outcomes** (rubric-graded
+iterate→grade→revise). Full build plan:
 [`docs/architecture/in-house-sdk-and-runtime.md`](../architecture/in-house-sdk-and-runtime.md).

@@ -31,7 +31,9 @@ import { defaultTools } from '../runtime/tools/builtins';
 import { createRunTestsTool, createGitCommitTool, createOpenPrTool } from '../runtime/tools/finalize';
 import { referenceGitProvider } from '../runtime/git/referenceProvider';
 import { createGitHubProvider } from '../runtime/git/githubProvider';
+import { createInstallationTokenSource, type InstallationTokenSource } from '../runtime/git/githubAppAuth';
 import type { GitProvider } from '../runtime/git/gitProvider';
+import { logger } from '../../../lib/logger';
 import { linkPullRequestToTask } from '../../../services/taskPullRequestLink.service';
 import { resolveRunRepoConfig } from '../../../services/runRepoConfig.service';
 import { ensureRepoClone } from '../runtime/workspace/repoWorkspace';
@@ -81,10 +83,10 @@ async function tempDirSandbox(): Promise<Sandbox> {
  *   3. a fresh temp dir (no repo configured — the simulator path).
  */
 async function repoAwareSandbox(ctx: RunContext): Promise<Sandbox> {
-  const token = process.env.LUMEY_GITHUB_TOKEN;
-  if (token) {
-    const cfg = await resolveRunRepoConfig(ctx.taskId);
-    if (cfg) {
+  const cfg = await resolveRunRepoConfig(ctx.taskId);
+  if (cfg) {
+    const token = await resolveGitHubToken(cfg.owner, cfg.repo);
+    if (token) {
       const repoPath = await ensureRepoClone({
         remoteUrl: `https://github.com/${cfg.owner}/${cfg.repo}.git`,
         cacheKey: `${cfg.owner}/${cfg.repo}`,
@@ -98,6 +100,29 @@ async function repoAwareSandbox(ctx: RunContext): Promise<Sandbox> {
   return tempDirSandbox();
 }
 
+/** Lazily build the GitHub App token source from env (once). */
+let appTokenSource: InstallationTokenSource | null | undefined;
+function getAppTokenSource(): InstallationTokenSource | null {
+  if (appTokenSource !== undefined) return appTokenSource;
+  const appId = process.env.LUMEY_GITHUB_APP_ID;
+  const pem = process.env.LUMEY_GITHUB_APP_PRIVATE_KEY;
+  appTokenSource = appId && pem ? createInstallationTokenSource({ appId, privateKey: pem.replace(/\\n/g, '\n') }) : null;
+  return appTokenSource;
+}
+
+/** Prefer a short-lived GitHub App installation token; fall back to a PAT. */
+async function resolveGitHubToken(owner: string, repo: string): Promise<string | null> {
+  const source = getAppTokenSource();
+  if (source) {
+    try {
+      return await source.getInstallationToken(owner, repo);
+    } catch (err) {
+      logger.warn({ err, owner, repo }, '[agent-runtime] GitHub App token failed; falling back to PAT');
+    }
+  }
+  return process.env.LUMEY_GITHUB_TOKEN ?? null;
+}
+
 /**
  * Pick the GitProvider + PR base for a run. The real `github` one is used when
  * the task's project has a GitHub integration (repo identity) AND a token is
@@ -107,19 +132,20 @@ async function repoAwareSandbox(ctx: RunContext): Promise<Sandbox> {
  * remain a single-repo override for deployments without per-project config.
  */
 async function resolveGitProviderAndBase(ctx: RunContext, sandbox: Sandbox): Promise<{ provider: GitProvider; base?: string }> {
-  const token = process.env.LUMEY_GITHUB_TOKEN;
   const exec = (command: string, args: string[]) => sandbox.exec(command, args);
 
-  if (token) {
-    const cfg = await resolveRunRepoConfig(ctx.taskId);
-    if (cfg) {
+  const cfg = await resolveRunRepoConfig(ctx.taskId);
+  if (cfg) {
+    const token = await resolveGitHubToken(cfg.owner, cfg.repo);
+    if (token) {
       return { provider: createGitHubProvider({ exec, token, owner: cfg.owner, repo: cfg.repo }), base: cfg.baseBranch };
     }
-    const envRepo = process.env.LUMEY_GITHUB_REPO;
-    if (envRepo && envRepo.includes('/')) {
-      const [owner, name] = envRepo.split('/');
-      return { provider: createGitHubProvider({ exec, token, owner, repo: name }), base: process.env.LUMEY_PR_BASE };
-    }
+  }
+  const envRepo = process.env.LUMEY_GITHUB_REPO;
+  const envToken = process.env.LUMEY_GITHUB_TOKEN;
+  if (envRepo && envRepo.includes('/') && envToken) {
+    const [owner, name] = envRepo.split('/');
+    return { provider: createGitHubProvider({ exec, token: envToken, owner, repo: name }), base: process.env.LUMEY_PR_BASE };
   }
   return { provider: referenceGitProvider, base: process.env.LUMEY_PR_BASE };
 }
