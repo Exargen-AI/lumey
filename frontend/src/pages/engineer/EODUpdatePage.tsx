@@ -1,24 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, Check, ChevronRight, Rocket, ThumbsUp, Meh, HelpCircle, Ban, Flame, AlertCircle, Sun } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, ChevronRight, Flame, AlertCircle, Sun } from 'lucide-react';
 import { useMyTasks } from '@/hooks/useTasks';
 import { useSubmitDailyUpdate, useMyStreak } from '@/hooks/useDailyUpdates';
 import { useAuthStore } from '@/stores/authStore';
 import { Button, Field, Textarea, Select } from '@/components/ui';
 import { cn } from '@/lib/cn';
 import { PRIORITY_COLORS, PRIORITY_LABELS, TASK_STATUS_ORDER, TASK_STATUS_LABELS } from '@/lib/constants';
-
-type Mood = 'GREAT' | 'GOOD' | 'NEUTRAL' | 'STRUGGLING' | 'BLOCKED';
-
-// Mood option config — colors mirror the Standup page so the same emotion
-// reads the same colour wherever it appears.
-const MOOD_OPTIONS: { value: Mood; label: string; icon: typeof Rocket; ring: string; activeBg: string; activeText: string }[] = [
-  { value: 'GREAT',      label: 'Great',   icon: Rocket,     ring: 'ring-emerald-500/40 dark:ring-emerald-500/40', activeBg: 'bg-emerald-50 dark:bg-emerald-500/10', activeText: 'text-emerald-700 dark:text-emerald-300' },
-  { value: 'GOOD',       label: 'Good',    icon: ThumbsUp,   ring: 'ring-brand-500/40 dark:ring-brand-500/40',     activeBg: 'bg-brand-50 dark:bg-brand-500/10',     activeText: 'text-brand-700 dark:text-brand-300' },
-  { value: 'NEUTRAL',    label: 'Okay',    icon: Meh,        ring: 'ring-gray-400/40 dark:ring-obsidian-faded',    activeBg: 'bg-gray-100 dark:bg-obsidian-raised',  activeText: 'text-gray-700 dark:text-obsidian-fg' },
-  { value: 'STRUGGLING', label: 'Stuck',   icon: HelpCircle, ring: 'ring-amber-500/40 dark:ring-amber-500/40',     activeBg: 'bg-amber-50 dark:bg-amber-500/10',     activeText: 'text-amber-700 dark:text-amber-300' },
-  { value: 'BLOCKED',    label: 'Blocked', icon: Ban,        ring: 'ring-rose-500/40 dark:ring-rose-500/40',       activeBg: 'bg-rose-50 dark:bg-rose-500/10',       activeText: 'text-rose-700 dark:text-rose-300' },
-];
 
 interface TaskEntry {
   taskId: string;
@@ -43,7 +31,6 @@ export function EODUpdatePage() {
   const [summary, setSummary] = useState('');
   const [blockers, setBlockers] = useState('');
   const [plans, setPlans] = useState('');
-  const [mood, setMood] = useState<Mood>('GOOD');
   const [submitted, setSubmitted] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const initialized = useRef(false);
@@ -103,7 +90,6 @@ export function EODUpdatePage() {
     try {
       await submitUpdate.mutateAsync({
         summary,
-        mood,
         blockers: blockers || undefined,
         plans: plans || undefined,
         tasks: selectedTasks,
@@ -296,7 +282,7 @@ export function EODUpdatePage() {
           </div>
         )}
 
-        {/* ─── Step 2: Summary, Blockers, Plans, Mood ─── */}
+        {/* ─── Step 2: Summary, Blockers, Plans ─── */}
         {step === 2 && (
           <div className="p-6 space-y-5">
             <Field label="What did you accomplish today?" required>
@@ -326,34 +312,6 @@ export function EODUpdatePage() {
                 placeholder="What will you focus on tomorrow?"
               />
             </Field>
-
-            <div>
-              <label className="text-[10px] font-semibold uppercase tracking-[0.08em] text-gray-500 dark:text-obsidian-muted mb-2 block">
-                How are you feeling?
-              </label>
-              <div className="grid grid-cols-5 gap-2">
-                {MOOD_OPTIONS.map((opt) => {
-                  const Icon = opt.icon;
-                  const isSelected = mood === opt.value;
-                  return (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => setMood(opt.value)}
-                      className={cn(
-                        'flex flex-col items-center gap-1.5 p-3 rounded-xl border transition-all',
-                        isSelected
-                          ? cn('ring-2 border-transparent', opt.ring, opt.activeBg, opt.activeText)
-                          : 'border-gray-200 dark:border-obsidian-border hover:border-gray-300 dark:hover:border-obsidian-border-strong text-gray-500 dark:text-obsidian-muted bg-white dark:bg-obsidian-panel',
-                      )}
-                    >
-                      <Icon size={20} />
-                      <span className={cn('text-[11px]', isSelected ? 'font-semibold' : '')}>{opt.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
 
             <div className="flex items-center justify-between pt-4 border-t border-gray-100 dark:border-obsidian-border">
               <Button variant="ghost" size="sm" leadingIcon={<ArrowLeft size={14} />} onClick={() => setStep(1)}>
@@ -385,7 +343,6 @@ export function EODUpdatePage() {
               <ReviewRow label="Summary" value={<span className="text-[13px] text-gray-900 dark:text-obsidian-fg leading-relaxed">{summary}</span>} />
               {blockers && <ReviewRow label="Blockers" value={<span className="text-[13px] text-rose-600 dark:text-rose-400 leading-relaxed">{blockers}</span>} />}
               {plans && <ReviewRow label="Tomorrow" value={<span className="text-[13px] text-gray-900 dark:text-obsidian-fg leading-relaxed">{plans}</span>} />}
-              <ReviewRow label="Feeling" value={<span className="font-medium text-gray-900 dark:text-obsidian-fg">{MOOD_OPTIONS.find((m) => m.value === mood)?.label}</span>} />
             </div>
 
             {selectedCount > 0 && (

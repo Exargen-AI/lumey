@@ -1,10 +1,9 @@
-import { Mood, TaskStatus } from '@prisma/client';
+import { TaskStatus } from '@prisma/client';
 import prisma from '../config/database';
 import { toDateOnlyString } from '../utils/date';
 
 interface DailyUpdateInput {
   summary: string;
-  mood?: Mood;
   blockers?: string;
   plans?: string;
   hoursWorked?: number;
@@ -43,7 +42,6 @@ export async function submitDailyUpdate(userId: string, input: DailyUpdateInput)
       where: { userId_date: { userId, date: today } },
       update: {
         summary: input.summary.trim(),
-        mood: input.mood || 'NEUTRAL',
         blockers: input.blockers?.trim() || null,
         plans: input.plans?.trim() || null,
         hoursWorked: input.hoursWorked ?? null,
@@ -52,7 +50,6 @@ export async function submitDailyUpdate(userId: string, input: DailyUpdateInput)
         userId,
         date: today,
         summary: input.summary.trim(),
-        mood: input.mood || 'NEUTRAL',
         blockers: input.blockers?.trim() || null,
         plans: input.plans?.trim() || null,
         hoursWorked: input.hoursWorked ?? null,
@@ -117,20 +114,20 @@ export async function getMyStreak(userId: string) {
   const updates = await prisma.dailyUpdate.findMany({
     where: { userId },
     orderBy: { date: 'desc' },
-    select: { date: true, mood: true },
+    select: { date: true },
     take: 365,
   });
 
   // Build a 30-day heatmap (oldest → newest) marking each day as
-  // submitted or not, with the mood if known. Lets the frontend render a
-  // GitHub-contribution-style activity grid without a second round-trip.
+  // submitted or not. Lets the frontend render a GitHub-contribution-style
+  // activity grid without a second round-trip.
   const today = new Date(); today.setHours(0, 0, 0, 0);
-  const submittedByDay = new Map<string, string>();
+  const submittedByDay = new Set<string>();
   for (const u of updates) {
     const d = new Date(u.date); d.setHours(0, 0, 0, 0);
-    submittedByDay.set(d.toISOString().slice(0, 10), u.mood);
+    submittedByDay.add(d.toISOString().slice(0, 10));
   }
-  const recentDays: Array<{ date: string; submitted: boolean; mood: string | null }> = [];
+  const recentDays: Array<{ date: string; submitted: boolean }> = [];
   for (let i = 29; i >= 0; i--) {
     const d = new Date(today);
     d.setDate(today.getDate() - i);
@@ -138,7 +135,6 @@ export async function getMyStreak(userId: string) {
     recentDays.push({
       date: key,
       submitted: submittedByDay.has(key),
-      mood: submittedByDay.get(key) ?? null,
     });
   }
 

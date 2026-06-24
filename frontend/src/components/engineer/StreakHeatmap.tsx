@@ -1,17 +1,7 @@
 import { Flame } from 'lucide-react';
 import { cn } from '@/lib/cn';
 
-type Day = { date: string; submitted: boolean; mood: string | null };
-
-// Mood → fill colour. Greens for "submitted + healthy", amber/red for "submitted
-// but flagged". Empty cells are a near-invisible panel tint.
-const MOOD_INTENSITY: Record<string, string> = {
-  GREAT:      'bg-emerald-500',
-  GOOD:       'bg-emerald-400',
-  NEUTRAL:    'bg-emerald-300 dark:bg-emerald-400/70',
-  STRUGGLING: 'bg-amber-400',
-  BLOCKED:    'bg-rose-500',
-};
+type Day = { date: string; submitted: boolean };
 
 function formatLabel(iso: string): string {
   const d = new Date(iso + 'T00:00:00');
@@ -74,12 +64,11 @@ export function StreakHeatmap({
               />
             );
           }
-          const fill = day.mood ? MOOD_INTENSITY[day.mood] : 'bg-emerald-400';
           return (
             <div
               key={day.date}
-              className={cn(baseClass, fill)}
-              title={`${dayLabel} — ${day.mood?.replace('_', ' ').toLowerCase() || 'submitted'}`}
+              className={cn(baseClass, 'bg-emerald-400')}
+              title={`${dayLabel} — submitted`}
             />
           );
         })}
@@ -87,18 +76,8 @@ export function StreakHeatmap({
 
       {/* Legend */}
       <div className="flex items-center gap-3 mt-4 text-[10px] text-gray-400 dark:text-obsidian-faded">
-        <span>fewer</span>
-        <div className="flex gap-0.5">
-          <div className="w-2.5 h-2.5 rounded-[2px] bg-gray-100 dark:bg-obsidian-raised" />
-          <div className="w-2.5 h-2.5 rounded-[2px] bg-emerald-300 dark:bg-emerald-400/70" />
-          <div className="w-2.5 h-2.5 rounded-[2px] bg-emerald-400" />
-          <div className="w-2.5 h-2.5 rounded-[2px] bg-emerald-500" />
-        </div>
-        <span>more</span>
-        <div className="ml-auto flex items-center gap-3">
-          <span className="flex items-center gap-1"><div className="w-2.5 h-2.5 rounded-[2px] bg-amber-400" /> stuck</span>
-          <span className="flex items-center gap-1"><div className="w-2.5 h-2.5 rounded-[2px] bg-rose-500" /> blocked</span>
-        </div>
+        <span className="flex items-center gap-1"><div className="w-2.5 h-2.5 rounded-[2px] bg-gray-100 dark:bg-obsidian-raised" /> no update</span>
+        <span className="flex items-center gap-1"><div className="w-2.5 h-2.5 rounded-[2px] bg-emerald-400" /> submitted</span>
       </div>
     </div>
   );

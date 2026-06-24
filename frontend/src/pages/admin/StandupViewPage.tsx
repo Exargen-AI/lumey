@@ -1,22 +1,9 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Users, ChevronLeft, ChevronRight, Rocket, ThumbsUp, Meh, HelpCircle, Ban, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Users, ChevronLeft, ChevronRight, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { formatDate, toLocalDateString } from '@/lib/formatters';
 import api from '@/api/client';
-
-// Mood → display config. Keep blocker red as `rose` (matches the rest of the
-// platform's "danger" tone), and use brand violet for "Good" so positive
-// updates read in the brand colour rather than indigo.
-const MOOD_ICONS: Record<string, { icon: typeof Rocket; color: string; label: string; border: string; bg: string }> = {
-  GREAT:      { icon: Rocket,     color: 'text-emerald-600 dark:text-emerald-400', label: 'Great',      border: 'border-l-emerald-500',       bg: 'bg-emerald-500' },
-  GOOD:       { icon: ThumbsUp,   color: 'text-brand-600 dark:text-brand-400',     label: 'Good',       border: 'border-l-brand-500',         bg: 'bg-brand-500'   },
-  NEUTRAL:    { icon: Meh,        color: 'text-gray-500 dark:text-obsidian-muted', label: 'Neutral',    border: 'border-l-gray-300 dark:border-l-obsidian-border-strong', bg: 'bg-gray-400 dark:bg-obsidian-faded' },
-  STRUGGLING: { icon: HelpCircle, color: 'text-amber-600 dark:text-amber-400',     label: 'Struggling', border: 'border-l-amber-500',         bg: 'bg-amber-500'   },
-  BLOCKED:    { icon: Ban,        color: 'text-rose-600 dark:text-rose-400',       label: 'Blocked',    border: 'border-l-rose-500',          bg: 'bg-rose-500'    },
-};
-
-const MOOD_ORDER: (keyof typeof MOOD_ICONS)[] = ['GREAT', 'GOOD', 'NEUTRAL', 'STRUGGLING', 'BLOCKED'];
 
 // Stable sort: blockers first, then by role, then alphabetically.
 const ROLE_SORT: Record<string, number> = {
@@ -56,15 +43,6 @@ export function StandupViewPage() {
       return (a.user?.name || '').localeCompare(b.user?.name || '');
     });
   }, [updates]);
-
-  const moodCounts = useMemo(() => {
-    const counts: Record<string, number> = { GREAT: 0, GOOD: 0, NEUTRAL: 0, STRUGGLING: 0, BLOCKED: 0 };
-    sortedUpdates.forEach((u: any) => {
-      const m = u.mood || 'NEUTRAL';
-      counts[m] = (counts[m] ?? 0) + 1;
-    });
-    return counts;
-  }, [sortedUpdates]);
 
   const blockers = useMemo(() => sortedUpdates.filter((u: any) => u.blockers), [sortedUpdates]);
 
@@ -125,9 +103,9 @@ export function StandupViewPage() {
         </div>
       )}
 
-      {/* ─── Needs Attention + Team Mood — at-a-glance triage ─── */}
+      {/* ─── Needs Attention — at-a-glance triage ─── */}
       {sortedUpdates.length > 0 && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div>
           {/* Needs Attention */}
           <div className={cn(
             'rounded-2xl border p-5 shadow-soft dark:shadow-soft-dark',
@@ -170,37 +148,6 @@ export function StandupViewPage() {
               </ul>
             )}
           </div>
-
-          {/* Team Mood */}
-          <div className={cn(
-            'rounded-2xl border p-5',
-            'bg-white border-gray-200 dark:bg-obsidian-panel dark:border-obsidian-border',
-            'shadow-soft dark:shadow-soft-dark',
-          )}>
-            <h3 className="text-[11px] font-semibold uppercase tracking-[0.1em] text-gray-500 dark:text-obsidian-muted mb-3">Team Mood</h3>
-            <div className="flex h-2 rounded-full overflow-hidden bg-gray-100 dark:bg-obsidian-raised mb-4">
-              {MOOD_ORDER.map((m) => {
-                const count = moodCounts[m] || 0;
-                if (count === 0) return null;
-                const pct = (count / sortedUpdates.length) * 100;
-                return <div key={m} className={cn(MOOD_ICONS[m].bg, 'transition-all duration-500')} style={{ width: `${pct}%` }} title={`${MOOD_ICONS[m].label}: ${count}`} />;
-              })}
-            </div>
-            <div className="grid grid-cols-5 gap-2 text-center">
-              {MOOD_ORDER.map((m) => {
-                const cfg = MOOD_ICONS[m];
-                const Icon = cfg.icon;
-                const count = moodCounts[m] || 0;
-                return (
-                  <div key={m} className={cn('rounded-lg py-2 transition-opacity', count === 0 && 'opacity-30')}>
-                    <Icon size={16} className={cn('mx-auto', cfg.color)} />
-                    <p className="text-sm font-bold text-gray-900 dark:text-obsidian-fg mt-1 tabular-nums">{count}</p>
-                    <p className="text-[10px] text-gray-500 dark:text-obsidian-muted">{cfg.label}</p>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
         </div>
       )}
 
@@ -222,16 +169,13 @@ export function StandupViewPage() {
       ) : (
         <div className="stagger-fade space-y-3">
           {sortedUpdates.map((update: any) => {
-            const moodConfig = MOOD_ICONS[update.mood] || MOOD_ICONS.NEUTRAL;
-            const MoodIcon = moodConfig.icon;
             return (
               <div
                 key={update.id}
                 className={cn(
-                  'rounded-2xl overflow-hidden border-l-4',
+                  'rounded-2xl overflow-hidden border-l-4 border-l-brand-500',
                   'bg-white border border-gray-200 dark:bg-obsidian-panel dark:border-obsidian-border',
                   'shadow-soft dark:shadow-soft-dark',
-                  moodConfig.border,
                 )}
               >
                 {/* Person header */}
@@ -243,10 +187,6 @@ export function StandupViewPage() {
                     <p className="text-[14px] font-medium text-gray-900 dark:text-obsidian-fg leading-tight">{update.user?.name}</p>
                     <p className="text-[11px] text-gray-500 dark:text-obsidian-muted capitalize mt-0.5 leading-tight">{update.user?.role?.toLowerCase().replace('_', ' ')}</p>
                   </div>
-                  <span className={cn('flex items-center gap-1.5 text-[11px] font-medium px-2 py-1 rounded-md bg-gray-50 dark:bg-obsidian-raised', moodConfig.color)}>
-                    <MoodIcon size={13} />
-                    <span>{moodConfig.label}</span>
-                  </span>
                 </div>
 
                 <div className="p-5 space-y-4">

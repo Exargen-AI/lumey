@@ -2,7 +2,6 @@ import api from './client';
 
 export interface DailyUpdateSubmission {
   summary: string;
-  mood?: 'GREAT' | 'GOOD' | 'NEUTRAL' | 'STRUGGLING' | 'BLOCKED';
   blockers?: string;
   plans?: string;
   hoursWorked?: number;

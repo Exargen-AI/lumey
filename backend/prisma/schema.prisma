@@ -1007,20 +1007,11 @@ model IdempotencyKey {
 
 // ─── DAILY PROGRESS & PRODUCTIVITY ───
 
-enum Mood {
-  GREAT
-  GOOD
-  NEUTRAL
-  STRUGGLING
-  BLOCKED
-}
-
 model DailyUpdate {
   id          String   @id @default(uuid())
   userId      String
   date        DateTime @db.Date
   summary     String   @db.Text
-  mood        Mood     @default(NEUTRAL)
   blockers    String?  @db.Text
   plans       String?  @db.Text
   hoursWorked Float?

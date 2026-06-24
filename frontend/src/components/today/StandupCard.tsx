@@ -9,22 +9,12 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, ClipboardList, Loader2, Smile } from 'lucide-react';
+import { CheckCircle2, ClipboardList, Loader2 } from 'lucide-react';
 import { getTodayStatus, submitDailyUpdate } from '@/api/dailyUpdates';
-
-type Mood = 'GREAT' | 'GOOD' | 'NEUTRAL' | 'STRUGGLING' | 'BLOCKED';
-const MOOD_OPTIONS: { value: Mood; label: string; emoji: string }[] = [
-  { value: 'GREAT', label: 'Great', emoji: '😄' },
-  { value: 'GOOD', label: 'Good', emoji: '🙂' },
-  { value: 'NEUTRAL', label: 'OK', emoji: '😐' },
-  { value: 'STRUGGLING', label: 'Tough', emoji: '😕' },
-  { value: 'BLOCKED', label: 'Blocked', emoji: '🛑' },
-];
 
 export function StandupCard() {
   const qc = useQueryClient();
   const [summary, setSummary] = useState('');
-  const [mood, setMood] = useState<Mood | ''>('');
   const [blockers, setBlockers] = useState('');
   const [plans, setPlans] = useState('');
 
@@ -37,7 +27,6 @@ export function StandupCard() {
     mutationFn: () =>
       submitDailyUpdate({
         summary,
-        mood: mood || undefined,
         blockers: blockers || undefined,
         plans: plans || undefined,
       }),
@@ -85,30 +74,6 @@ export function StandupCard() {
             maxLength={5000}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm resize-y"
           />
-          <div>
-            <label className="text-xs font-medium text-gray-600 flex items-center gap-1 mb-1">
-              <Smile size={12} />
-              How did it feel?
-            </label>
-            <div className="flex gap-1.5 flex-wrap">
-              {MOOD_OPTIONS.map((m) => (
-                <button
-                  key={m.value}
-                  type="button"
-                  onClick={() => setMood(mood === m.value ? '' : m.value)}
-                  className={
-                    'px-2.5 py-1 rounded-md text-xs border transition-colors ' +
-                    (mood === m.value
-                      ? 'bg-brand-100 border-brand-400 text-brand-800'
-                      : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50')
-                  }
-                >
-                  <span className="mr-1">{m.emoji}</span>
-                  {m.label}
-                </button>
-              ))}
-            </div>
-          </div>
           <textarea
             value={blockers}
             onChange={(e) => setBlockers(e.target.value)}
