@@ -33,6 +33,7 @@ import { referenceGitProvider } from '../runtime/git/referenceProvider';
 import { createGitHubProvider } from '../runtime/git/githubProvider';
 import type { GitProvider } from '../runtime/git/gitProvider';
 import { linkPullRequestToTask } from '../../../services/taskPullRequestLink.service';
+import { resolveRunRepoConfig } from '../../../services/runRepoConfig.service';
 import { modelClientFromEnv } from '../runtime/model/factory';
 import type { ModelClient, ChatMessage } from '../runtime/model/types';
 import type { Sandbox } from '../runtime/sandbox/sandbox';
@@ -84,31 +85,43 @@ async function repoAwareSandbox(): Promise<Sandbox> {
 }
 
 /**
- * Pick the GitProvider: the real `github` one when a token + repo are configured
- * (`LUMEY_GITHUB_TOKEN` + `LUMEY_GITHUB_REPO=owner/repo`), else the reference
- * simulator — so the flow works with no GitHub auth at all.
+ * Pick the GitProvider + PR base for a run. The real `github` one is used when
+ * the task's project has a GitHub integration (repo identity) AND a token is
+ * configured (`LUMEY_GITHUB_TOKEN`, a deployment secret); the base branch comes
+ * from the project's `defaultBranch`. Otherwise the reference simulator — so the
+ * flow works with no integration/auth at all. `LUMEY_GITHUB_REPO`/`LUMEY_PR_BASE`
+ * remain a single-repo override for deployments without per-project config.
  */
-function resolveGitProvider(sandbox: Sandbox): GitProvider {
+async function resolveGitProviderAndBase(ctx: RunContext, sandbox: Sandbox): Promise<{ provider: GitProvider; base?: string }> {
   const token = process.env.LUMEY_GITHUB_TOKEN;
-  const repo = process.env.LUMEY_GITHUB_REPO;
-  if (token && repo && repo.includes('/')) {
-    const [owner, name] = repo.split('/');
-    return createGitHubProvider({ exec: (command, args) => sandbox.exec(command, args), token, owner, repo: name });
+  const exec = (command: string, args: string[]) => sandbox.exec(command, args);
+
+  if (token) {
+    const cfg = await resolveRunRepoConfig(ctx.taskId);
+    if (cfg) {
+      return { provider: createGitHubProvider({ exec, token, owner: cfg.owner, repo: cfg.repo }), base: cfg.baseBranch };
+    }
+    const envRepo = process.env.LUMEY_GITHUB_REPO;
+    if (envRepo && envRepo.includes('/')) {
+      const [owner, name] = envRepo.split('/');
+      return { provider: createGitHubProvider({ exec, token, owner, repo: name }), base: process.env.LUMEY_PR_BASE };
+    }
   }
-  return referenceGitProvider;
+  return { provider: referenceGitProvider, base: process.env.LUMEY_PR_BASE };
 }
 
 /** The default toolset for a run: the coding tools plus run-scoped finalize tools. */
-function defaultRunTools(ctx: RunContext, sandbox: Sandbox): ToolRunner {
+async function defaultRunTools(ctx: RunContext, sandbox: Sandbox): Promise<ToolRunner> {
   const branch = `lumey/run-${ctx.runId}`;
+  const { provider, base } = await resolveGitProviderAndBase(ctx, sandbox);
   return new ToolRunner([
     ...defaultTools(),
     createRunTestsTool({ command: process.env.LUMEY_TEST_CMD }),
     createGitCommitTool({ branch }),
     createOpenPrTool({
-      provider: resolveGitProvider(sandbox),
+      provider,
       branch,
-      base: process.env.LUMEY_PR_BASE,
+      base,
       onOpened: async (ref, input) => {
         await linkPullRequestToTask(ctx.taskId, { externalId: ref.externalId, url: ref.url, title: input.title });
       },
@@ -149,7 +162,7 @@ export function createNativeAdapter(deps: NativeAdapterDeps): RuntimeAdapter {
       try {
         const model = deps.modelFactory(); // throws if no model configured
         sandbox = await (deps.sandboxFactory ?? repoAwareSandbox)(ctx);
-        const tools = deps.toolsFactory ? deps.toolsFactory() : defaultRunTools(ctx, sandbox);
+        const tools = deps.toolsFactory ? deps.toolsFactory() : await defaultRunTools(ctx, sandbox);
         const context = new ContextEngine(buildSystemPrompt(ctx, tools.list()), { summarize: modelSummarizer(model) });
         const loop = new LoopController({
           model,

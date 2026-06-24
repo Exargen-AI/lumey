@@ -368,6 +368,8 @@ model ProjectGitHubIntegration {
   // halves separately makes querying cleaner.
   repoOwner          String
   repoName           String
+  // The branch agent PRs target by default (the repo's default branch).
+  defaultBranch      String    @default("main")
   webhookSecret      String
   // When true, a merged PR carrying `Closes <TASK-ID>` automatically moves
   // the task to DONE (still gated by AC done-gate). Off by default — admins

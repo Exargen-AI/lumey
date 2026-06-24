@@ -500,9 +500,39 @@ rates are deployment-owned; per-step usage breakdown; cost budgets/alerts).
 native adapter persists it; the SDK `runs.usage` returns tokens with/without
 cost, and `estimateCostUsd` is null-without-pricing / per-1M correct.
 
-## Next — beyond M2.11
+## M2.12 — per-project repo config (PRs land on the right repo)
 
-**Per-project repo config + installation-token auth** (replace the env bridge
-end to end), **background execution**, then **memory** and **Outcomes** grading.
-Full build plan:
+The env single-repo bridge becomes per-project: each project's tasks open PRs
+against **that project's own GitHub repo**, resolved from its existing GitHub
+integration. Code: `services/runRepoConfig.service.ts` + `adapters/native.ts`.
+
+- **`ProjectGitHubIntegration.defaultBranch`** (migration
+  `20260624030000`, default `main`) — the branch agent PRs target.
+- **`resolveRunRepoConfig(taskId)`** — walks task → project → integration and
+  returns `{ owner, repo, baseBranch }`, or `null` when the project has no
+  integration. The access **token stays a deployment secret** (the integration
+  is webhook-inbound and stores none) — this resolves *which* repo, not the
+  credential.
+- **Native adapter** — when a token is configured *and* the task's project has
+  an integration, the `github` provider targets that project's repo with its
+  `defaultBranch` as the PR base; `LUMEY_GITHUB_REPO`/`LUMEY_PR_BASE` remain a
+  single-repo override; otherwise the reference simulator (works with nothing
+  configured).
+
+**Scope (MoSCoW):** Must ✅ (per-project repo resolution from the integration;
+`defaultBranch`; native wiring; reference fallback; tests) · Should ✅ (env
+single-repo override retained; token stays out of the DB) · Won't this increment
+(installation-token auth / a GitHub App; a settings-UI field for `defaultBranch`
+— it defaults sensibly; cloning the repo into the workspace — the worktree
+source is still `LUMEY_RUN_REPO_PATH`).
+
+**Tests:** `resolveRunRepoConfig` returns the project's repo / null without an
+integration / null for a missing task.
+
+## Next — beyond M2.12
+
+**Workspace clone management** (clone the project repo into a per-project cache,
+worktree from it — retiring `LUMEY_RUN_REPO_PATH`), **installation-token auth**,
+**background execution**, then **memory** and **Outcomes** grading. Full build
+plan:
 [`docs/architecture/in-house-sdk-and-runtime.md`](../architecture/in-house-sdk-and-runtime.md).
