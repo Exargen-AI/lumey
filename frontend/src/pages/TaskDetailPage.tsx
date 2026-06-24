@@ -14,6 +14,7 @@ import { ChecklistList } from '@/components/tasks/ChecklistList';
 import { CopyLinkButton } from '@/components/tasks/CopyLinkButton';
 import { LinkedIssuesSection } from '@/components/tasks/LinkedIssuesSection';
 import { LinkedPRsSection } from '@/components/tasks/LinkedPRsSection';
+import { RunsSection } from '@/components/tasks/RunsSection';
 import { TaskCustomFieldsSection } from '@/components/customFields/TaskCustomFieldsSection';
 import { RichTextEditor } from '@/components/editor/RichTextEditor';
 import { MarkdownView } from '@/components/editor/MarkdownView';
@@ -294,6 +295,11 @@ export function TaskDetailPage() {
           {/* Linked PRs (GitHub) — only renders when at least one PR is linked */}
           <div className="bg-white dark:bg-obsidian-panel rounded-xl border border-gray-200 dark:border-obsidian-border p-6 empty:hidden">
             <LinkedPRsSection taskId={taskId} />
+          </div>
+
+          {/* Agent runs — dispatch an agent and watch its run trace */}
+          <div className="bg-white dark:bg-obsidian-panel rounded-xl border border-gray-200 dark:border-obsidian-border p-6">
+            <RunsSection taskId={taskId} />
           </div>
 
           {/* Comments */}

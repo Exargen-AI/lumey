@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import * as service from '../../services/agentRun.service';
-import { NotFoundError } from '../../utils/errors';
+import { startRun, cancelRun, resolveRunnerAgentId } from './runOrchestrator';
+import { NotFoundError, ValidationError } from '../../utils/errors';
 
 // GET /api/v1/tasks/:id/runs — a task's runs, newest first (summary view).
 export async function listTaskRunsHandler(req: Request, res: Response, next: NextFunction) {
@@ -21,6 +22,36 @@ export async function getTaskRunHandler(req: Request, res: Response, next: NextF
     const run = await service.getRun(req.params.runId);
     if (run.taskId !== req.params.id) throw new NotFoundError('Run');
     res.json({ success: true, data: run });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// POST /api/v1/tasks/:id/runs — dispatch an agent run on the task. Body may
+// name an `agentId`; otherwise we default to the task's agent assignee (if any)
+// or the first active agent. The reference runtime executes synchronously, so
+// the response already reflects the parked-for-review run.
+export async function startTaskRunHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const agentId: string | undefined = req.body?.agentId ?? undefined;
+    const resolvedAgentId = agentId ?? (await resolveRunnerAgentId(req.params.id));
+    if (!resolvedAgentId) {
+      throw new ValidationError('No agent available to run this task. Provision an agent user first.');
+    }
+    const run = await startRun({ taskId: req.params.id, agentId: resolvedAgentId, adapterId: req.body?.adapterId });
+    res.status(201).json({ success: true, data: run });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// POST /api/v1/tasks/:id/runs/:runId/cancel — stop a non-terminal run.
+export async function cancelTaskRunHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const run = await service.getRun(req.params.runId);
+    if (run.taskId !== req.params.id) throw new NotFoundError('Run');
+    await cancelRun(req.params.runId);
+    res.json({ success: true, data: { id: req.params.runId } });
   } catch (err) {
     next(err);
   }

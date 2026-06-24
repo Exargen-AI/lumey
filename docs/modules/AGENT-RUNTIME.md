@@ -3,8 +3,8 @@
 The keystone of the platform: an **AgentRun** is one execution of an agent
 against a task. M2.1 lands the *platform-side* foundation — the data model, a
 validated lifecycle, and a runtime-neutral run service that emits the trace.
-The *execution* side (a RuntimeAdapter driving a real run via the Claude Agent
-SDK / a sandbox) is M2.2, and calls the same service.
+The *execution* side (a RuntimeAdapter driving a real run via our in-house
+runtime / a sandbox) is M2.2+, and calls the same service.
 
 Code: `backend/src/modules/agent-runtime/` · service:
 `backend/src/services/agentRun.service.ts` · lifecycle:
@@ -90,9 +90,9 @@ Write paths (create/transition) arrive with the RuntimeAdapter in M2.2.
 The firewall between Lumey and whatever runtime executes a run (a simulator,
 the Claude Agent SDK, OpenHands, a local loop). An adapter translates its
 runtime's **native** execution into **our** run model via the run service — no
-vendor concept (`span.*`, `tool_confirmation`, SDK types) ever surfaces above
-the interface. Swapping runtimes is "write a new adapter", never "rewrite the
-platform".
+runtime concept (`span.*`, `tool_confirmation`, internal types) ever surfaces
+above the interface. Swapping runtimes is "write a new adapter", never "rewrite
+the platform".
 
 ```ts
 interface RuntimeAdapter {
@@ -124,10 +124,57 @@ start-run HTTP route + permissions, the frontend trace UI).
 registry resolve/unknown/duplicate; orchestrator creates-and-delegates,
 rejects non-agents, fails fast on missing task / unknown adapter.
 
-## Next (M2.3+)
+## M2.3 — start-run API + live run-trace UI
+
+The write path and the human-facing view. A run can now be *dispatched* from the
+product and *watched* as it executes.
+
+**Orchestrator additions** (`runOrchestrator.ts`):
+
+| Function | What it does |
+|---|---|
+| `resolveRunnerAgentId(taskId)` | pick the runner: the task assignee if it's an active agent, else the first active agent in the deployment, else `null` (no agents → caller 422s) |
+| `cancelRun(runId)` | cancel a non-terminal run (→ `CANCELLED`); no-op on an already-terminal run; `NotFoundError` if missing |
+
+**Write API** (`agentRun.routes.ts` / `agentRun.handler.ts`) — scoped under the
+task, reusing the same `taskAccess` gate plus `authorizeAny('task.edit_any',
+'task.edit_own')` (dispatching an agent is editing the task's work):
+
+- `POST /api/v1/tasks/:id/runs` — resolve the runner agent and start a run;
+  `201` with the run summary. `422` if the deployment has no agent to run it.
+- `POST /api/v1/tasks/:id/runs/:runId/cancel` — cancel an in-flight run.
+
+**Reference agent seed** (`seed/referenceAgent.seed.ts`) — upserts a *Lumey
+Agent* (`agent@lumey.local`, `userType: AGENT`, `agentRole:
+autonomous-engineer`) so a fresh deployment can dispatch a run with zero setup.
+Wired into `seedDemoData`.
+
+**Frontend** (`components/tasks/RunsSection.tsx`, on the task detail page) — an
+**Agent runs** panel: a *Run with agent* button, and per-run expandable rows
+showing a status pill (`Awaiting review`, `Running`, …), the ordered step trace
+(Plan → Apply edits → Run tests → Open PR + request review, each with its
+icon + detail), the run summary, and a *Cancel run* action while the run is
+live. API/hooks: `api/agentRuns.ts`, `hooks/useAgentRuns.ts` (React Query).
+
+Verified end-to-end against the local deployment: *Run with agent* dispatches
+the reference adapter, which parks the run at **AWAITING_REVIEW** with the full
+four-step trace rendered in the panel.
+
+**Scope (MoSCoW):** Must ✅ (start/cancel routes + permissions; runner
+resolution; trace UI) · Should ✅ (reference-agent seed; honest 422 when no
+agent exists) · Won't this increment (real execution behind the seam; live
+push/streaming of the trace — the UI fetches on open/invalidate, not via a
+socket yet).
+
+**Tests:** `runOrchestrator.test.ts` covers `startRun` (agent-only, missing
+task, unknown adapter fails before create), `cancelRun` (non-terminal /
+terminal no-op / missing), and `resolveRunnerAgentId` (assignee-agent / pool
+fallback / no-agents → null).
+
+## Next (M2.4+)
 
 Our **in-house `native` runtime** behind the seam (built from scratch — model
-client, tool runner, sandbox, context engine; **no external agent SDK**), plus
-the write API (start-run route + permissions) and the frontend live-trace view
-on the kanban card. Full build plan:
+client, tool runner, sandbox, context engine; **no external agent SDK**), which
+slots in as one more adapter and lights up the *same* start-run API and trace UI
+shipped here. Full build plan:
 [`docs/architecture/in-house-sdk-and-runtime.md`](../architecture/in-house-sdk-and-runtime.md).

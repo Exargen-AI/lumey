@@ -4,13 +4,17 @@ import { prismaMock } from '../../test/prismaMock';
 import { UserType } from '@prisma/client';
 import { NotFoundError, ValidationError } from '../../utils/errors';
 
-const { createRunSpy } = vi.hoisted(() => ({ createRunSpy: vi.fn() }));
+const { createRunSpy, transitionRunSpy } = vi.hoisted(() => ({
+  createRunSpy: vi.fn(),
+  transitionRunSpy: vi.fn().mockResolvedValue({}),
+}));
 vi.mock('../../services/agentRun.service', async (orig) => ({
   ...(await orig<Record<string, unknown>>()),
   createRun: createRunSpy,
+  transitionRun: transitionRunSpy,
 }));
 
-import { startRun } from './runOrchestrator';
+import { startRun, cancelRun, resolveRunnerAgentId } from './runOrchestrator';
 import { referenceAdapter } from './adapters/reference';
 
 beforeEach(() => {
@@ -55,5 +59,47 @@ describe('startRun', () => {
       startRun({ taskId: 't1', agentId: 'a1', adapterId: 'bogus' }),
     ).rejects.toThrow(/unknown runtime adapter/);
     expect(createRunSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('cancelRun', () => {
+  it('transitions a non-terminal run to CANCELLED', async () => {
+    prismaMock.agentRun.findUnique.mockResolvedValue({ status: 'RUNNING' } as never);
+    await cancelRun('r1');
+    expect(transitionRunSpy).toHaveBeenCalledWith('r1', 'CANCELLED');
+  });
+
+  it('is a no-op on an already-terminal run', async () => {
+    prismaMock.agentRun.findUnique.mockResolvedValue({ status: 'SUCCEEDED' } as never);
+    expect(await cancelRun('r1')).toBeNull();
+    expect(transitionRunSpy).not.toHaveBeenCalled();
+  });
+
+  it('throws NotFoundError for a missing run', async () => {
+    prismaMock.agentRun.findUnique.mockResolvedValue(null as never);
+    await expect(cancelRun('nope')).rejects.toBeInstanceOf(NotFoundError);
+  });
+});
+
+describe('resolveRunnerAgentId', () => {
+  it('prefers the task assignee when it is an active agent', async () => {
+    prismaMock.task.findUnique.mockResolvedValue({
+      assignee: { id: 'agent-assignee', userType: UserType.AGENT, agentActive: true },
+    } as never);
+    expect(await resolveRunnerAgentId('t1')).toBe('agent-assignee');
+  });
+
+  it('falls back to the first active agent when the assignee is a human', async () => {
+    prismaMock.task.findUnique.mockResolvedValue({
+      assignee: { id: 'human', userType: UserType.HUMAN, agentActive: false },
+    } as never);
+    prismaMock.user.findFirst.mockResolvedValue({ id: 'pool-agent' } as never);
+    expect(await resolveRunnerAgentId('t1')).toBe('pool-agent');
+  });
+
+  it('returns null when the deployment has no agents', async () => {
+    prismaMock.task.findUnique.mockResolvedValue({ assignee: null } as never);
+    prismaMock.user.findFirst.mockResolvedValue(null as never);
+    expect(await resolveRunnerAgentId('t1')).toBeNull();
   });
 });

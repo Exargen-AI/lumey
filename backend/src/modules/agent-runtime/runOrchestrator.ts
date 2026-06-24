@@ -5,9 +5,10 @@
  * runtime-neutral; the adapter does the real work behind the seam.
  */
 import prisma from '../../config/database';
-import { UserType } from '@prisma/client';
+import { UserType, RunStatus } from '@prisma/client';
 import { NotFoundError, ValidationError } from '../../utils/errors';
-import { createRun } from '../../services/agentRun.service';
+import { createRun, transitionRun } from '../../services/agentRun.service';
+import { isTerminal } from '../../lib/runLifecycle';
 import { getAdapter, DEFAULT_ADAPTER_ID } from './adapterRegistry';
 import type { RunContext } from './runtimeAdapter';
 
@@ -49,4 +50,40 @@ export async function startRun(input: {
   };
   await adapter.execute(ctx);
   return run;
+}
+
+/**
+ * Cancel a run. Platform-level stop: transitions a non-terminal run to
+ * CANCELLED (no-op if it already finished). A real runtime adapter will also be
+ * signalled to abort its in-flight work once long-running runs land (M2.7).
+ */
+export async function cancelRun(runId: string) {
+  const run = await prisma.agentRun.findUnique({
+    where: { id: runId },
+    select: { status: true },
+  });
+  if (!run) throw new NotFoundError('Run');
+  if (isTerminal(run.status)) return null; // already done
+  return transitionRun(runId, RunStatus.CANCELLED);
+}
+
+/**
+ * Resolve the agent to run a task as. For now (single-agent dev), default to
+ * the task's agent assignee if it is one, else the first active agent user.
+ * Returns null when the deployment has no agents.
+ */
+export async function resolveRunnerAgentId(taskId: string): Promise<string | null> {
+  const task = await prisma.task.findUnique({
+    where: { id: taskId },
+    select: { assignee: { select: { id: true, userType: true, agentActive: true } } },
+  });
+  if (task?.assignee && task.assignee.userType === UserType.AGENT && task.assignee.agentActive) {
+    return task.assignee.id;
+  }
+  const agent = await prisma.user.findFirst({
+    where: { userType: UserType.AGENT, agentActive: true, isActive: true },
+    orderBy: { createdAt: 'asc' },
+    select: { id: true },
+  });
+  return agent?.id ?? null;
 }

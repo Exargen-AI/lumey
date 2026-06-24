@@ -6,6 +6,7 @@ import { seedTasks } from './tasks.seed';
 import { seedMilestones } from './milestones.seed';
 import { seedDecisions } from './decisions.seed';
 import { seedAgentUsers } from './agentUsers.seed';
+import { seedReferenceAgent } from './referenceAgent.seed';
 import { isProductionEnvironment } from './safety';
 
 /**
@@ -65,8 +66,9 @@ async function seedReferenceData() {
 async function seedDemoData() {
   console.log('  ─ Demo data phase (DEV ONLY)');
 
-  // 1. Seed users
+  // 1. Seed users (+ a reference agent so runs can be dispatched locally)
   const userMap = await seedUsers();
+  await seedReferenceAgent();
 
   // 2. Seed projects with members
   const projectMap = await seedProjects(userMap);
