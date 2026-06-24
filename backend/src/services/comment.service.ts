@@ -6,13 +6,14 @@ import { logActivity } from './activity.service';
 import {
   createBulkNotifications,
   createNotification,
-  notifyTaskSubscribersOfComment,
   notifyClientsOfStoryUpdate,
 } from './notification.service';
 import { checkPermission, canViewProjectInternal } from './rbac.service';
-import { subscribeToTask, getSubscriberIdsForNotify } from './taskSubscription.service';
+import { subscribeToTask } from './taskSubscription.service';
 import { viewerCanSeeAgents } from '../lib/agentVisibility';
 import { logger } from '../lib/logger';
+import { bus } from '../kernel';
+import type { CommentCreatedEvent } from '../modules/comments/events';
 
 /**
  * Find every project member whose name is @-mentioned in the comment
@@ -271,35 +272,31 @@ export async function createComment(projectId: string, data: any, userId: string
   //      mention recipients (above) AND vs the comment author
   //      (always self-skip).
   if (data.taskId) {
-    // Auto-subscribe mentioned users.
+    // Auto-subscribe mentioned users — a comment-domain action (a mention is
+    // an explicit "I want this person's attention" signal). Idempotent.
     for (const mentionedUserId of mentionedIds) {
       subscribeToTask(data.taskId, mentionedUserId, 'AUTO_MENTIONED')
         .catch((err) => logger.warn({ err: err?.message }, '[subscribe] AUTO_MENTIONED failed:'));
     }
-
-    // Subscriber fan-out. Build the exclude set so we don't double-
-    // notify users who already got a mention ping above.
-    const exclude = new Set<string>([userId, ...mentionedIds]);
-    const subscriberIds = await getSubscriberIdsForNotify(data.taskId, exclude);
-    if (subscriberIds.length > 0) {
-      const task = await prisma.task.findUnique({
-        where: { id: data.taskId },
-        select: { title: true },
-      });
-      if (task) {
-        notifyTaskSubscribersOfComment({
-          taskId: data.taskId,
-          taskTitle: task.title,
-          projectId,
-          projectName: project?.name ?? 'a project',
-          authorId: userId,
-          authorName: comment.author.name,
-          commentSnippet: data.content.substring(0, 100),
-          subscriberIds,
-        }).catch((err) => logger.warn({ err: err?.message }, '[notify] notifyTaskSubscribersOfComment failed:'));
-      }
-    }
   }
+
+  // Announce the fact on the kernel bus. The notifications module (if enabled)
+  // fans out to task subscribers; future modules (observability, knowledge
+  // graph) can react too without this service knowing they exist. Fire-and-
+  // forget — the bus isolates subscriber errors, and a notification must never
+  // fail the post.
+  void bus.publish<CommentCreatedEvent>({
+    type: 'comment.created',
+    commentId: comment.id,
+    projectId,
+    projectName: project?.name ?? 'a project',
+    taskId: data.taskId ?? null,
+    milestoneId: data.milestoneId ?? null,
+    authorId: userId,
+    authorName: comment.author.name,
+    contentSnippet: data.content.substring(0, 100),
+    mentionedUserIds: Array.from(mentionedIds),
+  });
 
   // ── Story-update → client notification (Ask 1, 2026-06) ───────────
   //

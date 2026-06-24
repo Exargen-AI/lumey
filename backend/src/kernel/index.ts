@@ -11,4 +11,6 @@
 
 export { ModuleRegistry } from './registry';
 export { ConfigEntitlements } from './entitlements';
+export { bus } from './eventBus';
 export type { ModuleManifest } from './manifest';
+export type { DomainEvent } from './events';

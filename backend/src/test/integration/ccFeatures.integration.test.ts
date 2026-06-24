@@ -146,6 +146,7 @@ vi.mock('../../services/customField.service', () => ({
 import taskRoutes from '../../routes/task.routes';
 import commentRoutes from '../../routes/comment.routes';
 import notificationRoutes from '../../routes/notification.routes';
+import { bus } from '../../kernel';
 
 const app = createTestApp([
   ['/api/v1', taskRoutes],
@@ -281,22 +282,12 @@ describe('POST /api/v1/tasks/:id/comments — @-mention fan-out + auto-subscribe
     expect(mentionsForPm).toHaveLength(0);
   });
 
-  it('subscribers (not the author, not already-mentioned) get a separate comment notification', async () => {
-    // Scenario: ENG and a third user (qa-1) are subscribed. PM
-    // comments and tags ENG explicitly. The expected fan-out:
-    //   - ENG: gets the @-mention notification (NOT also the
-    //     subscriber notification — deduped)
-    //   - qa-1: gets the subscriber notification
-    //   - PM: gets nothing (author self-skip)
-    const QA = fakeUser({ id: QA_ID, name: 'Quinn', role: 'ENGINEER' });
-
-    // The service calls getSubscriberIdsForNotify with the
-    // exclude set { authorId, ...mentionedIds }. Our mock returns
-    // the IDs Prisma WOULD return after applying the notIn filter:
-    // only QA (since ENG is mentioned and PM is the author).
-    prismaMock.taskSubscription.findMany.mockResolvedValue([
-      { userId: QA.id },
-    ] as any);
+  it('publishes comment.created carrying the author + mentioned users', async () => {
+    // Decoupled: the comment route's job is to ANNOUNCE the fact on the bus.
+    // The notifications module subscribes to comment.created and fans out to
+    // task subscribers (exclude-set + dedupe logic tested in
+    // notifications.module.test). Here we assert the route emits the contract.
+    const publishSpy = vi.spyOn(bus, 'publish');
 
     const res = await request
       .post(`/api/v1/projects/${PROJECT_ID}/comments`)
@@ -307,14 +298,15 @@ describe('POST /api/v1/tasks/:id/comments — @-mention fan-out + auto-subscribe
       });
 
     expect(res.status).toBe(201);
-
-    // Subscriber fan-out fired with QA as the recipient.
-    expect(notifyMock.notifyTaskSubscribersOfComment).toHaveBeenCalledWith(
+    expect(publishSpy).toHaveBeenCalledWith(
       expect.objectContaining({
+        type: 'comment.created',
         authorId: PM.id,
-        subscriberIds: [QA.id],
+        taskId: TASK_ID,
+        mentionedUserIds: [ENG.id],
       }),
     );
+    publishSpy.mockRestore();
   });
 });
 

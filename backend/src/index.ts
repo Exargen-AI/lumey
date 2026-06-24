@@ -32,7 +32,6 @@ import activityRoutes from './routes/activity.routes';
 import analyticsRoutes from './routes/analytics.routes';
 import adminRoutes from './routes/admin.routes';
 import dailyUpdateRoutes from './routes/dailyUpdate.routes';
-import notificationRoutes from './routes/notification.routes';
 import sprintRoutes from './routes/sprint.routes';
 import customFieldRoutes from './routes/customField.routes';
 import agentRoutes from './routes/agent.routes';
@@ -47,6 +46,7 @@ import openapiRoutes from './routes/openapi.routes';
 
 import { ModuleRegistry, ConfigEntitlements } from './kernel';
 import { commentsModule } from './modules/comments';
+import { notificationsModule } from './modules/notifications';
 
 const app = express();
 
@@ -57,6 +57,7 @@ const app = express();
 // each module's init hook during bootstrap, before the listener opens.
 const registry = new ModuleRegistry(new ConfigEntitlements());
 registry.register(commentsModule);
+registry.register(notificationsModule);
 
 // Middleware stack — Security hardened
 //
@@ -204,7 +205,6 @@ app.use('/api/v1', activityRoutes);
 app.use('/api/v1/analytics', analyticsRoutes);
 app.use('/api/v1/admin', adminRoutes);
 app.use('/api/v1', dailyUpdateRoutes);
-app.use('/api/v1', notificationRoutes);
 app.use('/api/v1', sprintRoutes);
 app.use('/api/v1', customFieldRoutes);
 app.use('/api/v1', agentRoutes);
