@@ -85,8 +85,47 @@ Write paths (create/transition) arrive with the RuntimeAdapter in M2.2.
 - `modules/agent-runtime/agent-runtime.module.test.ts` — mount + entitlement
   gate (401 enabled vs 404 disabled).
 
-## Next (M2.2)
+## M2.2 — the RuntimeAdapter seam
 
-The `RuntimeAdapter` interface (runtime-neutral seam) + a reference adapter, so
-a real runtime can drive a run through `createRun → transitionRun → appendStep`
-and surface the live trace on the kanban card.
+The firewall between Lumey and whatever runtime executes a run (a simulator,
+the Claude Agent SDK, OpenHands, a local loop). An adapter translates its
+runtime's **native** execution into **our** run model via the run service — no
+vendor concept (`span.*`, `tool_confirmation`, SDK types) ever surfaces above
+the interface. Swapping runtimes is "write a new adapter", never "rewrite the
+platform".
+
+```ts
+interface RuntimeAdapter {
+  id: string;
+  capabilities(): { selfHosted; memory; outcomes; multiAgent };  // honest flags
+  execute(ctx: RunContext): Promise<void>;   // drive QUEUED → review-park / terminal
+  cancel(runId: string): Promise<void>;
+}
+```
+
+- **`referenceAdapter`** (`adapters/reference.ts`) — a deterministic,
+  dependency-free simulator for dev/demos/tests. It records a realistic step
+  trace (PLAN → EDIT → TEST → REVIEW_REQUEST) and parks the run at
+  `AWAITING_REVIEW` — exactly where a real coding agent lands after opening a
+  PR. No external calls, no sandbox, no model.
+- **`adapterRegistry`** — adapters self-register by id; `getAdapter(id)` resolves
+  one. Adding a runtime is registering one more adapter.
+- **`runOrchestrator.startRun({taskId, agentId, adapterId?})`** — the entry
+  point: validates the runner is an **agent** user, resolves the adapter
+  *before* creating the run (so an unknown runtime fails fast), creates the run
+  (QUEUED), and hands it the task context to execute.
+
+**Scope (MoSCoW):** Must ✅ (interface + reference adapter + registry +
+orchestrator + tests) · Should ✅ (honest capabilities, agent-only enforcement)
+· Won't this increment (the Claude Agent SDK adapter / real sandbox, a
+start-run HTTP route + permissions, the frontend trace UI).
+
+**Tests:** reference adapter drives the lifecycle + step trace + cancel;
+registry resolve/unknown/duplicate; orchestrator creates-and-delegates,
+rejects non-agents, fails fast on missing task / unknown adapter.
+
+## Next (M2.3+)
+
+A real runtime adapter (Claude Agent SDK behind the seam) that does actual work
+in a sandbox, plus the write API (start-run route + permissions) and the
+frontend live-trace view on the kanban card.

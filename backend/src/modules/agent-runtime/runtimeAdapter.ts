@@ -1,0 +1,60 @@
+/**
+ * The RuntimeAdapter seam — the firewall between Lumey and whatever runtime
+ * actually executes a run (a reference simulator, the Claude Agent SDK,
+ * OpenHands, a local loop, …).
+ *
+ * The rule that keeps us vendor-neutral: an adapter translates its runtime's
+ * NATIVE execution into OUR run model (lifecycle + steps + events) via the run
+ * service. No vendor concept — no `span.*`, no `tool_confirmation`, no SDK
+ * type — ever surfaces above this interface. Swapping runtimes is "write a new
+ * adapter", never "rewrite the platform".
+ */
+import type { Prisma } from '@prisma/client';
+
+/**
+ * The minimal task context handed to an adapter to execute a run. Grows as the
+ * context compiler (M3) enriches it; intentionally runtime-neutral.
+ */
+export interface RunContext {
+  readonly runId: string;
+  readonly taskId: string;
+  readonly agentId: string;
+  readonly task: {
+    readonly title: string;
+    readonly description: string | null;
+    /** Structured acceptance criteria — the run's definition of done. */
+    readonly acceptanceCriteria: Prisma.JsonValue;
+  };
+}
+
+/**
+ * Honest capability flags per runtime, so the platform can degrade gracefully
+ * (e.g. refuse the air-gapped tier on a runtime that can't self-host).
+ */
+export interface RuntimeCapabilities {
+  /** Executes inside the customer's own infrastructure (air-gap). */
+  readonly selfHosted: boolean;
+  /** Cross-run persistent memory. */
+  readonly memory: boolean;
+  /** Rubric-graded iterate→grade→revise loop (Outcomes). */
+  readonly outcomes: boolean;
+  /** Sub-agent delegation / multi-agent coordination. */
+  readonly multiAgent: boolean;
+}
+
+export interface RuntimeAdapter {
+  /** Stable id, e.g. `reference`, `claude-agent-sdk`, `openhands`. */
+  readonly id: string;
+
+  capabilities(): RuntimeCapabilities;
+
+  /**
+   * Drive the run from QUEUED to a stopping point — a human-review park
+   * (AWAITING_REVIEW / AWAITING_INPUT) or a terminal state — recording steps
+   * and lifecycle transitions through the run service as it goes.
+   */
+  execute(ctx: RunContext): Promise<void>;
+
+  /** Best-effort cancel of an in-flight run. */
+  cancel(runId: string): Promise<void>;
+}
