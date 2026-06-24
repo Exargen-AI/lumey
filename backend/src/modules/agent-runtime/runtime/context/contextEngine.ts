@@ -31,6 +31,12 @@ export interface ContextEngineConfig {
   readonly summarize?: (older: ChatMessage[]) => Promise<string>;
   /** Injectable token estimator (a real tokenizer can replace the heuristic). */
   readonly estimate?: (messages: readonly ChatMessage[]) => number;
+  /**
+   * Stable context inserted right after the system prompt and before the
+   * transcript — e.g. recalled cross-run memories. Identical every turn within a
+   * run (so still cache-friendly) and never compacted.
+   */
+  readonly preamble?: readonly ChatMessage[];
 }
 
 const DEFAULTS = { maxTokens: 24_000, keepRecent: 8, toolResultCap: 8_000 } as const;
@@ -42,6 +48,7 @@ export class ContextEngine {
   private readonly toolResultCap: number;
   private readonly summarize?: (older: ChatMessage[]) => Promise<string>;
   private readonly estimate: (messages: readonly ChatMessage[]) => number;
+  private readonly preamble: readonly ChatMessage[];
 
   constructor(systemPrompt: string, cfg: ContextEngineConfig = {}) {
     this.system = systemPrompt;
@@ -50,6 +57,7 @@ export class ContextEngine {
     this.toolResultCap = cfg.toolResultCap ?? DEFAULTS.toolResultCap;
     this.summarize = cfg.summarize;
     this.estimate = cfg.estimate ?? estimateMessagesTokens;
+    this.preamble = cfg.preamble ?? [];
   }
 
   /** The stable prefix — exposed so callers/tests can assert byte-stability. */
@@ -59,23 +67,23 @@ export class ContextEngine {
 
   /** Build the message array for one model turn from the run transcript. */
   async assemble(transcript: readonly ChatMessage[]): Promise<ChatMessage[]> {
-    const systemMsg: ChatMessage = { role: 'system', content: this.system };
+    const head: ChatMessage[] = [{ role: 'system', content: this.system }, ...this.preamble];
     const edited = transcript.map((m) => this.editToolResult(m));
 
-    if (this.estimate([systemMsg, ...edited]) <= this.maxTokens) {
-      return [systemMsg, ...edited];
+    if (this.estimate([...head, ...edited]) <= this.maxTokens) {
+      return [...head, ...edited];
     }
 
     const split = this.safeSplitIndex(edited);
     const older = edited.slice(0, split);
     const recent = edited.slice(split);
     if (older.length === 0) {
-      return [systemMsg, ...recent]; // nothing left to compact; best effort
+      return [...head, ...recent]; // nothing left to compact; best effort
     }
 
     const summaryText = this.summarize ? await this.summarize(older) : structuralSummary(older);
     const summaryMsg: ChatMessage = { role: 'system', content: `[Earlier progress, compacted to fit the context window]\n${summaryText}` };
-    return [systemMsg, summaryMsg, ...recent];
+    return [...head, summaryMsg, ...recent];
   }
 
   /** Clip an oversized tool result so no single output dominates the window. */

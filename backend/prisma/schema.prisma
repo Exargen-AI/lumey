@@ -1249,6 +1249,22 @@ model AgentRun {
   @@map("agent_runs")
 }
 
+// Cross-run agent memory — durable learnings (conventions, gotchas, prior
+// progress) recalled into a run's context so the agent doesn't relearn the same
+// project every time. Scoped by project; advisory (no FK), so a deleted project
+// just leaves orphan rows the recall query never reaches.
+model AgentMemory {
+  id          String   @id @default(uuid())
+  projectId   String
+  kind        String // e.g. run-summary, convention, gotcha
+  content     String   @db.Text
+  sourceRunId String? // the run that produced it, when applicable
+  createdAt   DateTime @default(now())
+
+  @@index([projectId, createdAt])
+  @@map("agent_memories")
+}
+
 model RunStep {
   id        String        @id @default(uuid())
   runId     String

@@ -617,8 +617,39 @@ verifiable RS256 token with App claims; the source looks up the installation and
 mints a Bearer-JWT token; caches until expiry; throws on a failed lookup;
 requires appId/privateKey.
 
-## Next — beyond M2.15
+## M2.16 — cross-run memory (the agent stops relearning the project)
 
-**Memory** (cross-run agent memory) and **Outcomes** (rubric-graded
-iterate→grade→revise). Full build plan:
+The `native` runtime's `memory` capability turns on: a run **recalls** durable
+learnings from prior runs on the project and **records** what it learned. Code:
+`services/agentMemory.service.ts` + `runtime/context/contextEngine.ts` +
+`adapters/native.ts`.
+
+- **`AgentMemory`** model (migration `20260624050000`) — `{projectId, kind,
+  content, sourceRunId}`, recency-indexed. Advisory (no FK): a deleted project
+  just leaves rows the recall query never reaches.
+- **Service** — `recordMemory` (skips empty), `recallMemories(projectId, {limit})`
+  (recency-ordered — a relevance/embedding ranker can replace the ordering later
+  without changing callers), `projectIdForTask`.
+- **ContextEngine preamble** — recalled memories are injected as a stable
+  context block *after* the system prompt and *before* the transcript: identical
+  every turn within a run (cache-friendly) and **never compacted away**.
+- **Native adapter** — at run start, recalls the project's memories into the
+  preamble; on finish, records the run summary as a `run-summary` memory so the
+  next run sees prior progress. `capabilities().memory = true`.
+
+**Scope (MoSCoW):** Must ✅ (memory model + record/recall; context preamble that
+survives compaction; native recall→record wiring; capability flag; tests) ·
+Should ✅ (project-scoped; recency ordering; advisory/no-FK) · Won't this
+increment (semantic/embedding relevance ranking; memory curation/dedup/expiry;
+a memory-management UI; agent-authored explicit memories beyond the run summary).
+
+**Tests:** service record (trim / skip-empty) + recall (ordering + limit) +
+`projectIdForTask`; ContextEngine inserts the preamble after the system prompt
+and keeps it across compaction.
+
+## Next — beyond M2.16
+
+**Outcomes** — a rubric-graded iterate→grade→revise loop (the agent grades its
+own work against the acceptance criteria and revises before requesting review),
+flipping the runtime's last capability flag. Full build plan:
 [`docs/architecture/in-house-sdk-and-runtime.md`](../architecture/in-house-sdk-and-runtime.md).

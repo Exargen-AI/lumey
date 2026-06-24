@@ -27,6 +27,24 @@ describe('ContextEngine.assemble', () => {
     expect(a[0]).toEqual(b[0]);
   });
 
+  it('inserts a preamble (recalled memory) after the system prompt, before the transcript', async () => {
+    const preamble: ChatMessage[] = [{ role: 'system', content: 'MEMORY' }];
+    const eng = new ContextEngine(SYSTEM, { preamble });
+    const transcript = users(2);
+    const out = await eng.assemble(transcript);
+    expect(out[0]).toEqual({ role: 'system', content: SYSTEM });
+    expect(out[1]).toEqual({ role: 'system', content: 'MEMORY' });
+    expect(out.slice(2)).toEqual(transcript);
+  });
+
+  it('keeps the preamble across compaction', async () => {
+    const eng = new ContextEngine(SYSTEM, { preamble: [{ role: 'system', content: 'MEMORY' }], maxTokens: 5, keepRecent: 2, estimate: byCount });
+    const out = await eng.assemble(users(10));
+    expect(out[0].content).toBe(SYSTEM);
+    expect(out[1].content).toBe('MEMORY'); // preamble survives compaction
+    expect(out[2].role).toBe('system'); // the compaction summary follows
+  });
+
   it('clips an oversized tool result with an elision marker', async () => {
     const eng = new ContextEngine(SYSTEM, { toolResultCap: 50 });
     const transcript: ChatMessage[] = [{ role: 'tool', content: 'x'.repeat(500), toolCallId: 'c1' }];

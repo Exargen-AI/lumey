@@ -36,6 +36,7 @@ import type { GitProvider } from '../runtime/git/gitProvider';
 import { logger } from '../../../lib/logger';
 import { linkPullRequestToTask } from '../../../services/taskPullRequestLink.service';
 import { resolveRunRepoConfig } from '../../../services/runRepoConfig.service';
+import { recallMemories, recordMemory, projectIdForTask } from '../../../services/agentMemory.service';
 import { ensureRepoClone } from '../runtime/workspace/repoWorkspace';
 import { modelClientFromEnv } from '../runtime/model/factory';
 import type { ModelClient, ChatMessage } from '../runtime/model/types';
@@ -169,6 +170,14 @@ async function defaultRunTools(ctx: RunContext, sandbox: Sandbox): Promise<ToolR
   ]);
 }
 
+/** Recalled cross-run memories as a stable context preamble for the run. */
+async function memoryPreamble(projectId: string): Promise<ChatMessage[]> {
+  const memories = await recallMemories(projectId, { limit: 8 });
+  if (!memories.length) return [];
+  const body = memories.map((m) => `- ${m.content}`).join('\n');
+  return [{ role: 'system', content: `Learnings from prior runs on this project (most recent first):\n${body}` }];
+}
+
 /** A model-backed compaction summarizer for the ContextEngine. */
 function modelSummarizer(model: ModelClient): (older: ChatMessage[]) => Promise<string> {
   return async (older) => {
@@ -190,7 +199,7 @@ export function createNativeAdapter(deps: NativeAdapterDeps): RuntimeAdapter {
 
     capabilities: () => ({
       selfHosted: true, // runs anywhere this process runs, including air-gapped
-      memory: false, // cross-run memory is a later milestone
+      memory: true, // recalls + records cross-run project memory
       outcomes: false, // rubric-graded iterate→grade loop is a later milestone
       multiAgent: false, // single-agent loop for now
     }),
@@ -201,9 +210,11 @@ export function createNativeAdapter(deps: NativeAdapterDeps): RuntimeAdapter {
       let sandbox: Sandbox | undefined;
       try {
         const model = deps.modelFactory(); // throws if no model configured
+        const projectId = await projectIdForTask(ctx.taskId);
         sandbox = await (deps.sandboxFactory ?? repoAwareSandbox)(ctx);
         const tools = deps.toolsFactory ? deps.toolsFactory() : await defaultRunTools(ctx, sandbox);
-        const context = new ContextEngine(buildSystemPrompt(ctx, tools.list()), { summarize: modelSummarizer(model) });
+        const preamble = projectId ? await memoryPreamble(projectId) : [];
+        const context = new ContextEngine(buildSystemPrompt(ctx, tools.list()), { summarize: modelSummarizer(model), preamble });
         const loop = new LoopController({
           model,
           tools,
@@ -213,7 +224,11 @@ export function createNativeAdapter(deps: NativeAdapterDeps): RuntimeAdapter {
           budget: deps.budget,
           signal: controller.signal,
         });
-        await loop.run();
+        const outcome = await loop.run();
+        // Persist what this run learned so future runs on the project recall it.
+        if (projectId && outcome.summary) {
+          await recordMemory({ projectId, kind: 'run-summary', content: outcome.summary, sourceRunId: ctx.runId }).catch(() => undefined);
+        }
       } catch (e) {
         await failRun(ctx.runId, e); // a setup error before the loop transitioned RUNNING
       } finally {
