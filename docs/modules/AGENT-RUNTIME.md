@@ -171,10 +171,50 @@ task, unknown adapter fails before create), `cancelRun` (non-terminal /
 terminal no-op / missing), and `resolveRunnerAgentId` (assignee-agent / pool
 fallback / no-agents → null).
 
-## Next (M2.4+)
+## M2.4 — in-house ModelClient (the first runtime component)
 
-Our **in-house `native` runtime** behind the seam (built from scratch — model
-client, tool runner, sandbox, context engine; **no external agent SDK**), which
-slots in as one more adapter and lights up the *same* start-run API and trace UI
-shipped here. Full build plan:
+The first brick of the in-house `native` runtime: a model-agnostic inference
+client over **raw HTTP, no vendor SDK**. Code:
+`backend/src/modules/agent-runtime/runtime/model/`.
+
+It speaks the **OpenAI-compatible `/chat/completions`** wire format — the
+de-facto standard that local servers (vLLM, Ollama, llama.cpp) *and* frontier
+gateways all expose — so one client serves both backends. A model is a
+*dependency* (config: a `baseUrl` + a `model` id); the runtime is ours.
+
+| Piece | Responsibility |
+|---|---|
+| `types.ts` | runtime-neutral contract: `ModelClient`, `ChatMessage`, `ToolSchema`, `ModelToolCall`, `CompletionRequest`, `ModelResponse`, `ModelStreamChunk`. Nothing names a model family. |
+| `errors.ts` | typed failures, each with a `retryable` flag + HTTP `status`: `ModelAuth`/`RateLimit`/`Unavailable`/`Request`/`Timeout`/`Transport`/`Protocol`Error. Callers never see a raw `fetch` error. |
+| `httpModelClient.ts` | the engine: request/response mapping, a per-request **deadline** (AbortController), **bounded exponential-backoff retry on retryable failures only**, honest status→error classification, tool-call (de)serialization, and **SSE streaming** (`stream()`). |
+| `factory.ts` | the two named backends — `createLocalModelClient` (self-hosted vLLM/Ollama, no auth, air-gap/cost path) and `createFrontierModelClient` (hosted HTTPS gateway, API key **mandatory** — fail loud, not mid-run). |
+
+**Boundaries it keeps** (so it stays a thin, swappable transport): it does *not*
+parse/validate tool arguments (ToolRunner, M2.5), assemble or cache prompts
+(ContextEngine, M2.6), or route between backends (RoutingPolicy, later). It maps
+bytes to typed values and nothing more.
+
+**Retry/cancel semantics:** transient faults (`429`, `5xx`, transport, our own
+timeout) back off and retry up to `maxRetries`; permanent ones (`401/403`, other
+`4xx`, malformed `2xx`) fail fast. A **caller cancellation** (the run's cancel
+path) propagates untouched — it is never wrapped or retried, so cancelling a run
+stops the model call immediately.
+
+**Tests** (`httpModelClient.test.ts`, `factory.test.ts`, 19 cases, injected
+`fetch` + `sleep` — no network, no real timers bar one 5 ms deadline): response
++ tool-call + usage mapping, wire-body/auth/URL shape, each error class, retry
+exhaustion vs fast-fail, caller-cancel passthrough, SSE delta+finish parsing,
+and the local/frontier factory defaults.
+
+**Scope (MoSCoW):** Must ✅ (model-agnostic client, raw HTTP, typed errors,
+retry/timeout, tool calls, tests) · Should ✅ (streaming; local + frontier
+factories; caller cancellation) · Won't this increment (wiring it into a running
+loop — that's M2.7; routing/caching — later).
+
+## Next (M2.5+)
+
+The remaining `native` runtime components behind the seam — **ToolRunner +
+Sandbox** (M2.5), **ContextEngine** (M2.6), then the **LoopController** wired as
+the `native` adapter (M2.7), which lights up the *same* start-run API and trace
+UI shipped in M2.3. Full build plan:
 [`docs/architecture/in-house-sdk-and-runtime.md`](../architecture/in-house-sdk-and-runtime.md).

@@ -1,13 +1,13 @@
 /**
  * The RuntimeAdapter seam — the firewall between Lumey and whatever runtime
- * actually executes a run (a reference simulator, the Claude Agent SDK,
- * OpenHands, a local loop, …).
+ * actually executes a run (a reference simulator, our in-house `native`
+ * runtime, a third-party agent, …).
  *
- * The rule that keeps us vendor-neutral: an adapter translates its runtime's
+ * The rule that keeps us runtime-neutral: an adapter translates its runtime's
  * NATIVE execution into OUR run model (lifecycle + steps + events) via the run
- * service. No vendor concept — no `span.*`, no `tool_confirmation`, no SDK
- * type — ever surfaces above this interface. Swapping runtimes is "write a new
- * adapter", never "rewrite the platform".
+ * service. No runtime-internal concept — no `span.*`, no `tool_confirmation`,
+ * no SDK type — ever surfaces above this interface. Swapping runtimes is "write
+ * a new adapter", never "rewrite the platform".
  */
 import type { Prisma } from '@prisma/client';
 
