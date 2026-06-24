@@ -22,7 +22,7 @@ export interface LocalModelConfig extends Omit<HttpModelClientConfig, 'baseUrl'>
 
 /** A client for a self-hosted, OpenAI-compatible model server (vLLM / Ollama). */
 export function createLocalModelClient(config: LocalModelConfig): ModelClient {
-  return new HttpModelClient({ baseUrl: DEFAULT_LOCAL_BASE_URL, ...config });
+  return new HttpModelClient({ ...config, baseUrl: config.baseUrl ?? DEFAULT_LOCAL_BASE_URL });
 }
 
 export interface FrontierModelConfig extends HttpModelClientConfig {
@@ -36,4 +36,30 @@ export function createFrontierModelClient(config: FrontierModelConfig): ModelCli
     throw new Error('createFrontierModelClient: apiKey is required for a frontier backend');
   }
   return new HttpModelClient(config);
+}
+
+/**
+ * Resolve a ModelClient from environment — the native runtime's default model
+ * source. Throws (loudly, not at request time) when nothing is configured, so a
+ * deployment without a model fails a `native` run with a clear message instead
+ * of silently misbehaving.
+ *
+ *   LUMEY_MODEL_BACKEND = local | frontier            (default: local)
+ *   local:    LUMEY_LOCAL_MODEL (req), LUMEY_LOCAL_MODEL_URL (opt)
+ *   frontier: LUMEY_FRONTIER_URL, LUMEY_FRONTIER_MODEL, LUMEY_FRONTIER_API_KEY (all req)
+ */
+export function modelClientFromEnv(env: NodeJS.ProcessEnv = process.env): ModelClient {
+  const backend = (env.LUMEY_MODEL_BACKEND ?? 'local').toLowerCase();
+  if (backend === 'frontier') {
+    const { LUMEY_FRONTIER_URL: baseUrl, LUMEY_FRONTIER_MODEL: model, LUMEY_FRONTIER_API_KEY: apiKey } = env;
+    if (!baseUrl || !model || !apiKey) {
+      throw new Error('native runtime: frontier model not configured (set LUMEY_FRONTIER_URL, LUMEY_FRONTIER_MODEL, LUMEY_FRONTIER_API_KEY)');
+    }
+    return createFrontierModelClient({ baseUrl, model, apiKey });
+  }
+  const model = env.LUMEY_LOCAL_MODEL;
+  if (!model) {
+    throw new Error('native runtime: no model configured (set LUMEY_LOCAL_MODEL, or LUMEY_MODEL_BACKEND=frontier with LUMEY_FRONTIER_*)');
+  }
+  return createLocalModelClient({ model, baseUrl: env.LUMEY_LOCAL_MODEL_URL });
 }

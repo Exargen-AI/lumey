@@ -2,10 +2,11 @@
  * The agent-run lifecycle state machine.
  *
  *   QUEUED ──► RUNNING ──► SUCCEEDED        (happy path)
- *                 │  ├────► AWAITING_REVIEW ─► RUNNING | SUCCEEDED
- *                 │  ├────► AWAITING_INPUT  ─► RUNNING
- *                 │  └────► BLOCKED         ─► RUNNING
- *                 └──► FAILED
+ *      │          │  ├────► AWAITING_REVIEW ─► RUNNING | SUCCEEDED
+ *      │          │  ├────► AWAITING_INPUT  ─► RUNNING
+ *      │          │  └────► BLOCKED         ─► RUNNING
+ *      │          └──► FAILED
+ *      └──► FAILED                          (setup failed before the run started)
  *   (any non-terminal) ──► CANCELLED
  *
  * Transitions are validated centrally so neither the runtime adapter nor the
@@ -24,7 +25,7 @@ const TERMINAL: ReadonlySet<RunStatus> = new Set([
 
 /** Allowed next states for each state. Computed enum keys keep this typed. */
 const LEGAL: Readonly<Record<RunStatus, readonly RunStatus[]>> = {
-  [RunStatus.QUEUED]: [RunStatus.RUNNING, RunStatus.CANCELLED],
+  [RunStatus.QUEUED]: [RunStatus.RUNNING, RunStatus.FAILED, RunStatus.CANCELLED],
   [RunStatus.RUNNING]: [
     RunStatus.AWAITING_REVIEW,
     RunStatus.AWAITING_INPUT,

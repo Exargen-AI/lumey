@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createLocalModelClient, createFrontierModelClient } from './factory';
+import { createLocalModelClient, createFrontierModelClient, modelClientFromEnv } from './factory';
 
 function captureFetch() {
   const calls: Array<{ url: string; init: RequestInit }> = [];
@@ -42,5 +42,29 @@ describe('createFrontierModelClient', () => {
     const f = captureFetch();
     await createFrontierModelClient({ baseUrl: 'https://gw/v1', model: 'big', apiKey: 'sk-live', fetchImpl: f }).complete(REQ);
     expect((f.calls[0].init.headers as Record<string, string>).authorization).toBe('Bearer sk-live');
+  });
+});
+
+describe('modelClientFromEnv', () => {
+  it('builds a local client by default', () => {
+    expect(modelClientFromEnv({ LUMEY_LOCAL_MODEL: 'llama3.1' } as NodeJS.ProcessEnv).model).toBe('llama3.1');
+  });
+
+  it('throws when local is selected but unconfigured', () => {
+    expect(() => modelClientFromEnv({} as NodeJS.ProcessEnv)).toThrow(/no model configured/);
+  });
+
+  it('builds a frontier client when selected and fully configured', () => {
+    const c = modelClientFromEnv({
+      LUMEY_MODEL_BACKEND: 'frontier',
+      LUMEY_FRONTIER_URL: 'https://gw/v1',
+      LUMEY_FRONTIER_MODEL: 'big',
+      LUMEY_FRONTIER_API_KEY: 'sk',
+    } as NodeJS.ProcessEnv);
+    expect(c.model).toBe('big');
+  });
+
+  it('throws when frontier is selected but missing keys', () => {
+    expect(() => modelClientFromEnv({ LUMEY_MODEL_BACKEND: 'frontier' } as NodeJS.ProcessEnv)).toThrow(/frontier model not configured/);
   });
 });

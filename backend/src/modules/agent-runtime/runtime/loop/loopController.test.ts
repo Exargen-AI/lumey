@@ -1,0 +1,184 @@
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { promises as fs } from 'fs';
+import os from 'os';
+import path from 'path';
+import { RunStatus, RunStepType } from '@prisma/client';
+import { LoopController, type RunRecorder } from './loopController';
+import { ContextEngine } from '../context/contextEngine';
+import { buildSystemPrompt } from '../context/systemPrompt';
+import { ToolRunner } from '../tools/toolRunner';
+import { defaultTools } from '../tools/builtins';
+import { WorktreeSandbox } from '../sandbox/worktreeSandbox';
+import type { ModelClient, ModelResponse, CompletionRequest, ModelToolCall } from '../model/types';
+import type { RunContext } from '../../runtimeAdapter';
+import type { Sandbox } from '../sandbox/sandbox';
+
+// ── test doubles ────────────────────────────────────────────────────────────
+
+const usage = { promptTokens: 0, completionTokens: 0, totalTokens: 10 };
+
+function say(content: string): ModelResponse {
+  return { content, toolCalls: [], finishReason: 'stop', usage, model: 'mock' };
+}
+function callTool(id: string, name: string, args: string, totalTokens = 10): ModelResponse {
+  const calls: ModelToolCall[] = [{ id, name, arguments: args }];
+  return { content: '', toolCalls: calls, finishReason: 'tool_calls', usage: { ...usage, totalTokens }, model: 'mock' };
+}
+
+/** A model that plays a fixed script of responses (repeating the last). */
+class ScriptedModel implements ModelClient {
+  readonly model = 'mock';
+  private i = 0;
+  constructor(private readonly script: ModelResponse[]) {}
+  async complete(_req: CompletionRequest): Promise<ModelResponse> {
+    return this.script[Math.min(this.i++, this.script.length - 1)];
+  }
+  // eslint-disable-next-line require-yield
+  async *stream(): AsyncIterable<never> {
+    throw new Error('not used');
+  }
+}
+
+class ThrowingModel implements ModelClient {
+  readonly model = 'mock';
+  async complete(): Promise<ModelResponse> {
+    throw new Error('model exploded');
+  }
+  async *stream(): AsyncIterable<never> {
+    throw new Error('not used');
+  }
+}
+
+class FakeRecorder implements RunRecorder {
+  readonly steps: { type: RunStepType; title: string; detail?: string }[] = [];
+  readonly transitions: { to: RunStatus; summary?: string; error?: string }[] = [];
+  async step(input: { type: RunStepType; title: string; detail?: string }) {
+    this.steps.push(input);
+  }
+  async transition(to: RunStatus, opts?: { summary?: string; error?: string }) {
+    this.transitions.push({ to, ...opts });
+  }
+}
+
+const CTX: RunContext = {
+  runId: 'r1',
+  taskId: 't1',
+  agentId: 'a1',
+  task: { title: 'Add an output file', description: null, acceptanceCriteria: [] },
+};
+
+// ── fixtures ─────────────────────────────────────────────────────────────────
+
+let dir: string;
+let sandbox: Sandbox;
+let tools: ToolRunner;
+
+beforeEach(async () => {
+  dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lumey-loop-'));
+  sandbox = WorktreeSandbox.forDir(dir, { owned: true });
+  tools = new ToolRunner(defaultTools());
+});
+afterEach(async () => {
+  await sandbox.dispose();
+  await fs.rm(dir, { recursive: true, force: true });
+});
+
+function engine(over = {}) {
+  return new ContextEngine(buildSystemPrompt(CTX, tools.list()), over);
+}
+
+// ── the end-to-end test ──────────────────────────────────────────────────────
+
+describe('LoopController (end-to-end over real sandbox + tools + context)', () => {
+  it('drives a real coding session: read → write → review, mutating the workspace', async () => {
+    await sandbox.writeFile('README.md', 'hello world');
+    const model = new ScriptedModel([
+      callTool('c1', 'read_file', '{"path":"README.md"}'),
+      callTool('c2', 'write_file', '{"path":"out.txt","content":"done"}'),
+      say('Implemented the output file; please review.'),
+    ]);
+    const recorder = new FakeRecorder();
+    const loop = new LoopController({ model, tools, context: engine(), sandbox, recorder });
+
+    const outcome = await loop.run();
+
+    // the agent actually changed the workspace
+    expect(await sandbox.readFile('out.txt')).toBe('done');
+
+    // landed in the right lifecycle state, with the model's words as the summary
+    expect(outcome.status).toBe(RunStatus.AWAITING_REVIEW);
+    expect(outcome.summary).toContain('Implemented');
+    expect(recorder.transitions.map((t) => t.to)).toEqual([RunStatus.RUNNING, RunStatus.AWAITING_REVIEW]);
+
+    // the trace describes what happened
+    const stepTypes = recorder.steps.map((s) => s.type);
+    expect(stepTypes).toContain(RunStepType.TOOL_CALL); // read_file
+    expect(stepTypes).toContain(RunStepType.EDIT); // write_file
+    expect(stepTypes).toContain(RunStepType.REVIEW_REQUEST); // finalize
+  });
+
+  it('records a failing tool as an ok:false step but keeps going', async () => {
+    const model = new ScriptedModel([
+      callTool('c1', 'read_file', '{"path":"missing.txt"}'),
+      say('Could not read the file; stopping.'),
+    ]);
+    const recorder = new FakeRecorder();
+    const outcome = await new LoopController({ model, tools, context: engine(), sandbox, recorder }).run();
+
+    expect(outcome.status).toBe(RunStatus.AWAITING_REVIEW);
+    expect(recorder.steps.some((s) => s.title.includes('(failed)'))).toBe(true);
+  });
+
+  it('classifies a test command as a TEST step', async () => {
+    const model = new ScriptedModel([
+      callTool('c1', 'bash', '{"command":"npm test"}'),
+      say('done'),
+    ]);
+    const recorder = new FakeRecorder();
+    await new LoopController({
+      model,
+      tools: new ToolRunner(defaultTools({ bashPolicy: { allowedBinaries: ['npm'] } })),
+      context: engine(),
+      sandbox,
+      recorder,
+    }).run();
+    expect(recorder.steps.some((s) => s.type === RunStepType.TEST)).toBe(true);
+  });
+});
+
+describe('LoopController safety rails', () => {
+  it('turns a terminal model error into a FAILED run, not a crash', async () => {
+    const recorder = new FakeRecorder();
+    const outcome = await new LoopController({ model: new ThrowingModel(), tools, context: engine(), sandbox, recorder }).run();
+    expect(outcome.status).toBe(RunStatus.FAILED);
+    expect(recorder.transitions.at(-1)).toMatchObject({ to: RunStatus.FAILED, error: 'model exploded' });
+  });
+
+  it('stops at the step ceiling and hands off to review', async () => {
+    // a model that never stops calling tools
+    const model = new ScriptedModel([callTool('c', 'list_dir', '{}')]);
+    const recorder = new FakeRecorder();
+    const outcome = await new LoopController({ model, tools, context: engine(), sandbox, recorder, budget: { maxSteps: 3 } }).run();
+    expect(outcome.status).toBe(RunStatus.AWAITING_REVIEW);
+    expect(outcome.turns).toBe(3);
+    expect(outcome.summary).toMatch(/step ceiling/);
+  });
+
+  it('hands off when the token budget is exhausted', async () => {
+    const model = new ScriptedModel([callTool('c', 'list_dir', '{}', 5000)]);
+    const recorder = new FakeRecorder();
+    const outcome = await new LoopController({ model, tools, context: engine(), sandbox, recorder, budget: { maxTokens: 100 } }).run();
+    expect(outcome.status).toBe(RunStatus.AWAITING_REVIEW);
+    expect(outcome.summary).toMatch(/token budget/);
+  });
+
+  it('cancels cooperatively when the signal is aborted', async () => {
+    const ac = new AbortController();
+    ac.abort();
+    const model = new ScriptedModel([callTool('c', 'list_dir', '{}')]);
+    const recorder = new FakeRecorder();
+    const outcome = await new LoopController({ model, tools, context: engine(), sandbox, recorder, signal: ac.signal }).run();
+    expect(outcome.status).toBe(RunStatus.CANCELLED);
+    expect(recorder.transitions.map((t) => t.to)).toEqual([RunStatus.RUNNING, RunStatus.CANCELLED]);
+  });
+});

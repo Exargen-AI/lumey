@@ -1,11 +1,12 @@
 /**
  * Registry of runtime adapters. The orchestrator resolves a runtime by id;
- * built-in adapters self-register here. Adding a runtime (Claude Agent SDK,
- * OpenHands, …) is registering one more adapter — nothing above the seam
+ * built-in adapters self-register here. Adding a runtime (a third-party agent,
+ * a hosted runtime, …) is registering one more adapter — nothing above the seam
  * changes.
  */
 import type { RuntimeAdapter } from './runtimeAdapter';
 import { referenceAdapter } from './adapters/reference';
+import { nativeAdapter } from './adapters/native';
 
 const adapters = new Map<string, RuntimeAdapter>();
 
@@ -30,6 +31,11 @@ export function listAdapters(): string[] {
 
 // ── built-in adapters ──
 registerAdapter(referenceAdapter);
+registerAdapter(nativeAdapter);
 
-/** The default runtime until a real one is wired (M2.x). */
+/**
+ * The default runtime. `reference` (the deterministic simulator) stays the
+ * default so the product works with no model configured; select `native` (our
+ * in-house loop) per-run once a model is wired via env.
+ */
 export const DEFAULT_ADAPTER_ID = 'reference';

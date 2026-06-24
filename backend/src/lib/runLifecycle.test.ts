@@ -25,6 +25,10 @@ describe('runLifecycle', () => {
     expect(canTransition(RunStatus.FAILED, RunStatus.RUNNING)).toBe(false);
   });
 
+  it('lets a run fail during setup before it ever runs (QUEUED → FAILED)', () => {
+    expect(canTransition(RunStatus.QUEUED, RunStatus.FAILED)).toBe(true);
+  });
+
   it('allows a run to pause and resume (RUNNING ↔ AWAITING_*/BLOCKED)', () => {
     for (const paused of [RunStatus.AWAITING_REVIEW, RunStatus.AWAITING_INPUT, RunStatus.BLOCKED]) {
       expect(canTransition(RunStatus.RUNNING, paused)).toBe(true);

@@ -308,12 +308,73 @@ pass-through under budget, prefix stability as the transcript grows, tool-result
 clipping, compaction (structural + injected summarizer), and orphan-tool
 avoidance.
 
-## Next (M2.7+)
+## M2.7 — LoopController wired as the `native` adapter (it's alive)
 
-The **LoopController** wired as the `native` adapter (M2.7) — composing
-ModelClient + ContextEngine + ToolRunner + Sandbox into a real agentic loop that
-drives a run through the lifecycle, recording each turn as a `RunStep`/`RunEvent`
-and lighting up the *same* start-run API and trace UI shipped in M2.3 (with the
-`referenceAdapter` still covering demos until `native` is ready). Full build
-plan:
+The keystone: the four components compose into a real agentic loop that executes
+a task. Code: `runtime/loop/loopController.ts` + `adapters/native.ts`.
+
+**The loop** (`LoopController`) — one iteration per model turn:
+
+```
+transition(RUNNING)
+loop until done | budget | cancelled | error:
+  messages = ContextEngine.assemble(transcript)
+  response = ModelClient.complete(messages, tools)        # one turn
+  record RunStep(s) + transcript append                   # the trace
+  if response has tool calls:
+     results = ToolRunner.runAll(calls, sandbox)           # guarded, isolated
+     append results to transcript
+  else:
+     transition(AWAITING_REVIEW)  # model produced its final answer → human gate
+finalize: AWAITING_REVIEW | FAILED | CANCELLED
+```
+
+It owns the **safety rails**: a step ceiling and a token budget (the circuit
+breaker against a runaway loop — both hand off to human review, not a crash),
+cooperative cancellation, and turning a terminal model error into a `FAILED`
+run. Each turn and each tool result maps to a `RunStep` through an injected
+`RunRecorder` — so the loop is observable, costed, and lands the run in the
+right lifecycle state *by construction*. The recorder is a seam: it writes
+through the run service in production and collects calls in tests, so the loop
+is verified end-to-end with a **mock model over a real sandbox + tools +
+context engine**.
+
+**The adapter** (`createNativeAdapter` / `nativeAdapter`, id `native`) — composes
+ModelClient + ToolRunner + Sandbox + ContextEngine + LoopController behind the
+M2.2 seam. Dependency-injected (model/sandbox/tools factories) so it's fully
+testable; the default resolves the model from env (`modelClientFromEnv`) and
+gives each run a fresh temp-dir workspace. It's registered alongside
+`reference`; **`reference` stays the default** so the product works with no
+model at all, and `native` is selected per-run once a model is wired. A setup
+failure (no model configured) fails the run with a clear message via the new
+`QUEUED → FAILED` lifecycle edge. Cancellation is cooperative: `cancel(runId)`
+aborts the in-flight loop, which transitions `CANCELLED` at its next checkpoint.
+
+**Nothing above the seam changed** — the same `POST /tasks/:id/runs` and the same
+live trace UI from M2.3 now run on a real loop when `native` is chosen.
+
+**Scope (MoSCoW):** Must ✅ (the loop; step/token budget rails; native adapter
+composing all four components; registry wiring; e2e tests) · Should ✅
+(cooperative cancellation; `QUEUED→FAILED` for setup errors; `modelClientFromEnv`;
+tool→step-type classification; tool-failure-as-data continuation) · Won't this
+increment (background/async execution so a long run doesn't block the request —
+today `execute` is awaited like `reference`; cloning the project's real repo
+into the worktree — runs use a temp workspace until git-config lands;
+`run_tests`/`open_pr` finalize tools; cross-run memory / Outcomes grading).
+
+**Tests** (20 across loop + adapter + factory): an **end-to-end** run that reads
+a file, writes a new one, and requests review — asserting the workspace was
+actually mutated and the trace + lifecycle are correct; tool-failure-as-data;
+test-command step classification; model-error→FAILED; step-ceiling and
+token-budget hand-offs; cooperative cancel; adapter wiring + no-model→FAILED +
+cancel; and `modelClientFromEnv` local/frontier resolution.
+
+## Next — beyond M2.7
+
+The runtime now executes. What's next layers on top of the same seam: **real
+repo workspaces** (worktree from the project's git URL), **background
+execution** (so long runs don't block the request), the **finalize tools**
+(`run_tests`, `open_pr` + git telemetry), then **memory** and **Outcomes**
+grading. And **Part B — the Lumey Platform SDK** (schema-first TS + Python
+codegen). Full build plan:
 [`docs/architecture/in-house-sdk-and-runtime.md`](../architecture/in-house-sdk-and-runtime.md).
