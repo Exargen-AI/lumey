@@ -211,10 +211,68 @@ retry/timeout, tool calls, tests) · Should ✅ (streaming; local + frontier
 factories; caller cancellation) · Won't this increment (wiring it into a running
 loop — that's M2.7; routing/caching — later).
 
-## Next (M2.5+)
+## M2.5 — ToolRunner + Sandbox (how the agent acts, safely)
 
-The remaining `native` runtime components behind the seam — **ToolRunner +
-Sandbox** (M2.5), **ContextEngine** (M2.6), then the **LoopController** wired as
-the `native` adapter (M2.7), which lights up the *same* start-run API and trace
-UI shipped in M2.3. Full build plan:
+The agent's hands. An agent acts *only* through declared, schema-validated,
+guardable tools, executed inside a contained sandbox. Code:
+`runtime/sandbox/` and `runtime/tools/`.
+
+### Sandbox — the contained workspace
+
+`runtime/sandbox/sandbox.ts` defines the `Sandbox` contract; `WorktreeSandbox`
+is the local-dev implementation. Two invariants hold regardless of what a tool
+asks for:
+
+- **Path containment** — every path resolves *inside* `root`; `resolve()` throws
+  `SandboxPathError` on any traversal (`../`) or absolute path. A tool cannot
+  read or write outside the workspace.
+- **Bounded exec** — every process runs **shell-free** (explicit argv, no
+  injection), with a **timeout** (killed → `timedOut`), an **output cap**
+  (clipped → `truncated`), and **abort** support. A non-zero exit is returned,
+  never thrown.
+
+`WorktreeSandbox.create({repoPath, ref})` adds a detached **git worktree** —
+each run gets its own on-disk checkout sharing the object store, cheap to make
+and throw away; `dispose()` removes it. `forDir()` wraps a plain directory with
+the same guarantees. Isolation here is process+path level (trusted local dev);
+the same contract upgrades to a container sandbox (dropped caps, controlled
+egress) for untrusted execution.
+
+### Tools — declared, validated, guarded
+
+| Piece | Role |
+|---|---|
+| `types.ts` | `ToolDefinition` — name, description, a single `zod` arg schema, `mutates`, and a handler acting through the sandbox. |
+| `schema.ts` | `zodToJsonSchema` / `toModelTool` — generate the model-facing JSON-Schema **from the zod schema**, so a tool is declared exactly once (no drift). |
+| `guardrails.ts` | `checkCommand` — the server-side `bash` gate: a **denylist** (sudo, `rm -rf`, fork bombs, device writes, `curl … \| sh`, …) where deny always wins, over an **allowlist** of leading binaries (empty ⇒ deny-by-default). |
+| `builtins.ts` | the coding toolset: `read_file`, `write_file`, `edit_file` (unique-match unless `replaceAll`), `list_dir`, `grep` (JS walker, skips `node_modules`/`.git`/…), and a guardrail-checked `bash`. |
+| `toolRunner.ts` | dispatch + validation: resolve tool → parse JSON args → `zod` validate → run in sandbox → one `ToolResult`. **Never throws** — unknown tool, bad JSON, schema failure, blocked command, and handler errors all become `ok:false` results the model reads and recovers from. |
+
+**Design stance — tool errors are data.** A failing tool (or a blocked command,
+or a non-zero `bash` exit) is information the agent acts on, not a crash. The
+runner always returns a `ToolResult`; the loop records it as a step and lets the
+model decide what to do next. Calls run **sequentially** (writes/edits/side
+effects must order); parallelizing provably read-only tools is a later
+optimization.
+
+**Scope (MoSCoW):** Must ✅ (sandbox path-guard + bounded exec; tool contract +
+zod validation; the six builtins; guardrail gate; runner-never-throws; tests) ·
+Should ✅ (git-worktree create/dispose; schema generation from zod; output caps;
+cancellation) · Won't this increment (container/air-gap sandbox hardening;
+`run_tests`/`open_pr` finalize tools — they come with the loop in M2.7; secret-
+scanning tool outputs before commit; read-only parallel execution).
+
+**Tests** (45 cases across `sandbox` + `tools`): real-fs sandbox round-trips,
+path-traversal blocks, exec timeout/abort/output-cap, a real **git-worktree
+lifecycle**; zod→JSON-Schema mapping; guardrail allow/deny (incl. deny-wins);
+every builtin incl. edit uniqueness + grep dir-skipping + bash block; and the
+runner's full failure-to-`ok:false` matrix.
+
+## Next (M2.6+)
+
+The **ContextEngine** (M2.6 — prompt assembly + prefix-stable caching +
+compaction), then the **LoopController** wired as the `native` adapter (M2.7),
+which composes ModelClient + ToolRunner + Sandbox + ContextEngine into a real
+run and lights up the *same* start-run API and trace UI shipped in M2.3. Full
+build plan:
 [`docs/architecture/in-house-sdk-and-runtime.md`](../architecture/in-house-sdk-and-runtime.md).

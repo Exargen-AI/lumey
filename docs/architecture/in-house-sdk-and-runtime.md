@@ -193,7 +193,7 @@ and demos until the `native` runtime catches up.
 | `RuntimeAdapter` seam + `referenceAdapter` + registry + orchestrator | ✅ M2.2 | the firewall + a simulator runtime |
 | Start-run write API + live trace UI (reference adapter) | ✅ M2.3 | the agentic loop **visible** in the product |
 | `ModelClient` (local + frontier, raw HTTP) | ✅ M2.4 | model-agnostic inference, no vendor SDK |
-| `ToolRunner` + `Sandbox` (worktree → container) | M2.5 | real tool execution, isolated |
+| `ToolRunner` + `Sandbox` (worktree → container) | ✅ M2.5 | real tool execution, isolated |
 | `ContextEngine` (assembly + caching + compaction) | M2.6 | token-efficient prompting |
 | `LoopController` → wire as the `native` adapter | M2.7 | the in-house runtime **executes** a real task end to end |
 | `GuardrailEnforcer` at the tool boundary | woven | least-privilege blast radius |
