@@ -1221,6 +1221,9 @@ model AgentRun {
   taskId    String
   agentId   String // the agent User executing this run
   status    RunStatus @default(QUEUED)
+  // The runtime adapter that executed this run — so a cancel can reach the right
+  // one to abort its in-flight (background) work.
+  adapterId String    @default("reference")
   model     String? // model that produced the work (free-form, e.g. claude-opus-4-8)
   summary   String?   @db.Text // agent's run summary: what / why / risks
   error     String?   @db.Text // failure cause when status = FAILED

@@ -557,9 +557,42 @@ concurrent runs of the same repo; shallow/partial clones; cache eviction).
 new commits on an existing clone; contains a traversal cache key; cleans up and
 throws on an unclonable remote.
 
-## Next — beyond M2.13
+## M2.14 — background execution (runs stop blocking the request)
 
-**Background execution** (a long real run stops blocking the request — cancel
-plumbing already exists), **installation-token auth** (a GitHub App over the
-deployment PAT), then **memory** and **Outcomes** grading. Full build plan:
+A run now executes **detached** from the request that started it: `startRun`
+returns the QUEUED run immediately and the adapter drives the lifecycle in the
+background while the trace UI / SDK poll. Code: `runExecutor.ts` +
+`runOrchestrator.ts`.
+
+- **`dispatchRun(adapter, ctx)`** — fire-and-forget with **error isolation**: a
+  thrown `execute` (the adapter couldn't even start) is caught, logged, and the
+  run forced to FAILED so it never hangs in QUEUED/RUNNING. Tracks in-flight runs
+  (`isRunInflight`/`inflightRunCount`).
+- **Adapter-aware cancel** — `AgentRun.adapterId` (migration `20260624040000`)
+  records which runtime ran the run, so `cancelRun` delegates to *that* adapter's
+  `cancel` — the native loop aborts its in-flight work and transitions CANCELLED
+  cooperatively (or the adapter transitions directly if idle).
+- **Restart recovery** — `failInterruptedRuns()` (run at boot) fails any run left
+  RUNNING by a dead process, since in-process execution doesn't survive a
+  restart. (A durable job queue is the eventual home; this keeps the trace
+  honest meanwhile.)
+
+Verified end-to-end: `runs.start` returns `QUEUED` immediately, and the run
+reaches `AWAITING_REVIEW` in the background.
+
+**Scope (MoSCoW):** Must ✅ (detached execution; error isolation; adapter-aware
+cancel via `adapterId`; tests) · Should ✅ (in-flight tracking; restart reaper)
+· Won't this increment (a durable/persistent job queue with retries and
+multi-process coordination — the reaper is the interim guard; backpressure /
+concurrency caps).
+
+**Tests:** `dispatchRun` completion + forces-FAILED-on-throw + no-double-fail +
+in-flight tracking; `failInterruptedRuns` reaps RUNNING; `cancelRun` delegates to
+the run's adapter; `startRun` returns immediately and dispatches.
+
+## Next — beyond M2.14
+
+**Installation-token auth** (a GitHub App over the deployment PAT), then
+**memory** (cross-run) and **Outcomes** (rubric-graded iterate→grade). Full
+build plan:
 [`docs/architecture/in-house-sdk-and-runtime.md`](../architecture/in-house-sdk-and-runtime.md).

@@ -5,11 +5,12 @@
  * runtime-neutral; the adapter does the real work behind the seam.
  */
 import prisma from '../../config/database';
-import { UserType, RunStatus } from '@prisma/client';
+import { UserType } from '@prisma/client';
 import { NotFoundError, ValidationError } from '../../utils/errors';
-import { createRun, transitionRun } from '../../services/agentRun.service';
+import { createRun } from '../../services/agentRun.service';
 import { isTerminal } from '../../lib/runLifecycle';
 import { getAdapter, DEFAULT_ADAPTER_ID } from './adapterRegistry';
+import { dispatchRun } from './runExecutor';
 import type { RunContext } from './runtimeAdapter';
 
 export async function startRun(input: {
@@ -35,9 +36,10 @@ export async function startRun(input: {
 
   // Resolve the runtime up front so an unknown adapter fails before we create a
   // run that nothing will execute.
-  const adapter = getAdapter(input.adapterId ?? DEFAULT_ADAPTER_ID);
+  const adapterId = input.adapterId ?? DEFAULT_ADAPTER_ID;
+  const adapter = getAdapter(adapterId);
 
-  const run = await createRun({ taskId: task.id, agentId: input.agentId });
+  const run = await createRun({ taskId: task.id, agentId: input.agentId, adapterId });
   const ctx: RunContext = {
     runId: run.id,
     taskId: task.id,
@@ -48,23 +50,27 @@ export async function startRun(input: {
       acceptanceCriteria: task.acceptanceCriteria,
     },
   };
-  await adapter.execute(ctx);
+  // Execute in the background — return the QUEUED run immediately; the adapter
+  // drives the lifecycle from here and the trace UI / SDK poll for progress.
+  dispatchRun(adapter, ctx);
   return run;
 }
 
 /**
- * Cancel a run. Platform-level stop: transitions a non-terminal run to
- * CANCELLED (no-op if it already finished). A real runtime adapter will also be
- * signalled to abort its in-flight work once long-running runs land (M2.7).
+ * Cancel a run by delegating to the adapter that ran it — which aborts its
+ * in-flight (background) work and lets the loop transition CANCELLED
+ * cooperatively, or transitions directly if it's already idle. No-op if the run
+ * already finished.
  */
 export async function cancelRun(runId: string) {
   const run = await prisma.agentRun.findUnique({
     where: { id: runId },
-    select: { status: true },
+    select: { status: true, adapterId: true },
   });
   if (!run) throw new NotFoundError('Run');
   if (isTerminal(run.status)) return null; // already done
-  return transitionRun(runId, RunStatus.CANCELLED);
+  await getAdapter(run.adapterId).cancel(runId);
+  return null;
 }
 
 /**

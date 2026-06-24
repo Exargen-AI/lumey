@@ -48,6 +48,7 @@ import { ModuleRegistry, ConfigEntitlements } from './kernel';
 import { commentsModule } from './modules/comments';
 import { notificationsModule } from './modules/notifications';
 import { agentRuntimeModule } from './modules/agent-runtime';
+import { failInterruptedRuns } from './modules/agent-runtime/runExecutor';
 
 const app = express();
 
@@ -281,6 +282,14 @@ async function bootstrap() {
   // listener opens, so subscriptions are live before the first request.
   await registry.boot();
   logger.info({ modules: registry.enabledModuleIds() }, 'kernel modules enabled');
+
+  // Agent runs execute in-process and don't survive a restart — fail any left
+  // RUNNING by a previous process so the trace never lies. Non-fatal.
+  try {
+    await failInterruptedRuns();
+  } catch (err) {
+    logger.warn({ err }, 'interrupted-run reaper failed (non-fatal)');
+  }
 
   server = app.listen(env.PORT, () => {
     logger.info({ port: env.PORT, env: env.NODE_ENV }, 'server listening');

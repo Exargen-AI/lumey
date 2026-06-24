@@ -35,9 +35,9 @@ async function appendEvent(runId: string, type: string, payload: Record<string, 
 }
 
 /** Create a QUEUED run for a task. */
-export async function createRun(input: { taskId: string; agentId: string; model?: string | null }) {
+export async function createRun(input: { taskId: string; agentId: string; adapterId?: string; model?: string | null }) {
   const run = await prisma.agentRun.create({
-    data: { taskId: input.taskId, agentId: input.agentId, model: input.model ?? null },
+    data: { taskId: input.taskId, agentId: input.agentId, adapterId: input.adapterId ?? 'reference', model: input.model ?? null },
   });
   await appendEvent(run.id, 'run.created', { taskId: run.taskId, agentId: run.agentId });
   void bus.publish<RunCreatedEvent>({

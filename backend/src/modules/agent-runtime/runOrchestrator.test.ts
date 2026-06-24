@@ -35,7 +35,7 @@ describe('startRun', () => {
 
     const run = await startRun({ taskId: 't1', agentId: 'a1' });
 
-    expect(createRunSpy).toHaveBeenCalledWith({ taskId: 't1', agentId: 'a1' });
+    expect(createRunSpy).toHaveBeenCalledWith({ taskId: 't1', agentId: 'a1', adapterId: 'reference' });
     expect(exec).toHaveBeenCalledWith(
       expect.objectContaining({ runId: 'r1', taskId: 't1', agentId: 'a1' }),
     );
@@ -63,16 +63,20 @@ describe('startRun', () => {
 });
 
 describe('cancelRun', () => {
-  it('transitions a non-terminal run to CANCELLED', async () => {
-    prismaMock.agentRun.findUnique.mockResolvedValue({ status: 'RUNNING' } as never);
+  it('delegates to the adapter that ran it', async () => {
+    prismaMock.agentRun.findUnique.mockResolvedValue({ status: 'RUNNING', adapterId: 'reference' } as never);
+    const cancelSpy = vi.spyOn(referenceAdapter, 'cancel').mockResolvedValue();
     await cancelRun('r1');
-    expect(transitionRunSpy).toHaveBeenCalledWith('r1', 'CANCELLED');
+    expect(cancelSpy).toHaveBeenCalledWith('r1');
+    cancelSpy.mockRestore();
   });
 
   it('is a no-op on an already-terminal run', async () => {
-    prismaMock.agentRun.findUnique.mockResolvedValue({ status: 'SUCCEEDED' } as never);
+    prismaMock.agentRun.findUnique.mockResolvedValue({ status: 'SUCCEEDED', adapterId: 'reference' } as never);
+    const cancelSpy = vi.spyOn(referenceAdapter, 'cancel').mockResolvedValue();
     expect(await cancelRun('r1')).toBeNull();
-    expect(transitionRunSpy).not.toHaveBeenCalled();
+    expect(cancelSpy).not.toHaveBeenCalled();
+    cancelSpy.mockRestore();
   });
 
   it('throws NotFoundError for a missing run', async () => {

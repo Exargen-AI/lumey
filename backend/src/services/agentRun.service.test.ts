@@ -27,7 +27,7 @@ describe('createRun', () => {
     const run = await createRun({ taskId: 't1', agentId: 'a1' });
 
     expect(prismaMock.agentRun.create).toHaveBeenCalledWith({
-      data: { taskId: 't1', agentId: 'a1', model: null },
+      data: { taskId: 't1', agentId: 'a1', adapterId: 'reference', model: null },
     });
     expect(prismaMock.runEvent.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ runId: 'r1', seq: 1, type: 'run.created' }),
