@@ -30,6 +30,8 @@ import { ToolRunner } from '../runtime/tools/toolRunner';
 import { defaultTools } from '../runtime/tools/builtins';
 import { createRunTestsTool, createGitCommitTool, createOpenPrTool } from '../runtime/tools/finalize';
 import { referenceGitProvider } from '../runtime/git/referenceProvider';
+import { createGitHubProvider } from '../runtime/git/githubProvider';
+import type { GitProvider } from '../runtime/git/gitProvider';
 import { linkPullRequestToTask } from '../../../services/taskPullRequestLink.service';
 import { modelClientFromEnv } from '../runtime/model/factory';
 import type { ModelClient, ChatMessage } from '../runtime/model/types';
@@ -78,15 +80,30 @@ async function repoAwareSandbox(): Promise<Sandbox> {
   return tempDirSandbox();
 }
 
+/**
+ * Pick the GitProvider: the real `github` one when a token + repo are configured
+ * (`LUMEY_GITHUB_TOKEN` + `LUMEY_GITHUB_REPO=owner/repo`), else the reference
+ * simulator — so the flow works with no GitHub auth at all.
+ */
+function resolveGitProvider(sandbox: Sandbox): GitProvider {
+  const token = process.env.LUMEY_GITHUB_TOKEN;
+  const repo = process.env.LUMEY_GITHUB_REPO;
+  if (token && repo && repo.includes('/')) {
+    const [owner, name] = repo.split('/');
+    return createGitHubProvider({ exec: (command, args) => sandbox.exec(command, args), token, owner, repo: name });
+  }
+  return referenceGitProvider;
+}
+
 /** The default toolset for a run: the coding tools plus run-scoped finalize tools. */
-function defaultRunTools(ctx: RunContext): ToolRunner {
+function defaultRunTools(ctx: RunContext, sandbox: Sandbox): ToolRunner {
   const branch = `lumey/run-${ctx.runId}`;
   return new ToolRunner([
     ...defaultTools(),
     createRunTestsTool({ command: process.env.LUMEY_TEST_CMD }),
     createGitCommitTool({ branch }),
     createOpenPrTool({
-      provider: referenceGitProvider, // a real GitHub provider slots in behind the same seam
+      provider: resolveGitProvider(sandbox),
       branch,
       base: process.env.LUMEY_PR_BASE,
       onOpened: async (ref, input) => {
@@ -129,7 +146,7 @@ export function createNativeAdapter(deps: NativeAdapterDeps): RuntimeAdapter {
       try {
         const model = deps.modelFactory(); // throws if no model configured
         sandbox = await (deps.sandboxFactory ?? repoAwareSandbox)(ctx);
-        const tools = deps.toolsFactory ? deps.toolsFactory() : defaultRunTools(ctx);
+        const tools = deps.toolsFactory ? deps.toolsFactory() : defaultRunTools(ctx, sandbox);
         const context = new ContextEngine(buildSystemPrompt(ctx, tools.list()), { summarize: modelSummarizer(model) });
         const loop = new LoopController({
           model,

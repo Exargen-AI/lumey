@@ -438,10 +438,39 @@ reference provider; open_pr opens + links (callback fired with the ref);
 `linkPullRequestToTask` upsert shape; and the e2e where the agent writes →
 tests → commits → **opens a PR (linked)** → requests review.
 
-## Next — beyond M2.9
+## M2.10 — the real `github` GitProvider (PRs actually land)
 
-The real **`github` GitProvider** (push the run branch + create the PR through
-the project's GitHub integration), **per-project repo config** (replace the env
-bridge), **background execution**, then **memory** and **Outcomes** grading. And
-more **SDK** surface as endpoints land. Full build plan:
+The simulator's counterpart: `runtime/git/githubProvider.ts` **pushes the run
+branch and opens a real PR via the GitHub REST API** (raw fetch, no Octokit) —
+behind the *same* seam, so nothing above it changes.
+
+- **`createGitHubProvider({ exec, token, owner, repo })`** — pushes
+  `branch:branch` using a token-authenticated remote (the `exec` is the
+  sandbox's, so the push runs in the run's worktree), then `POST /repos/:o/:r/pulls`
+  with `{title, head, base, body}` and maps the response to the neutral
+  `PullRequestRef` (`owner/repo#number`, `html_url`).
+- **Token hygiene** — the token authenticates the push + the API call and is
+  **redacted** from any surfaced git output, so it never reaches the trace or
+  logs.
+- **Selection** — the native adapter uses `github` when `LUMEY_GITHUB_TOKEN` +
+  `LUMEY_GITHUB_REPO=owner/repo` are set, else the reference simulator (so the
+  flow still works with no auth). The project's GitHub integration is
+  webhook-*inbound* only and stores no token, so the deployment supplies one (a
+  GitHub App installation token in production, a PAT for local use).
+
+**Scope (MoSCoW):** Must ✅ (push + open PR via REST; neutral ref mapping; token
+redaction; env-based selection; tests) · Should ✅ (graceful API-error surfacing
+e.g. "PR already exists"; GitHub Enterprise host override) · Won't this
+increment (a GitHub App / per-project installation token; PR state sync on
+merge — that already flows via the existing webhook).
+
+**Tests** (injected `exec` + `fetch`, no network): pushes the branch + opens the
+PR + maps the ref; redacts the token on push failure; surfaces a 422; requires
+token/owner/repo.
+
+## Next — beyond M2.10
+
+**Per-project repo config + installation-token auth** (replace the env bridge
+end to end), **background execution**, then **memory** and **Outcomes** grading;
+plus more **SDK** surface as endpoints land. Full build plan:
 [`docs/architecture/in-house-sdk-and-runtime.md`](../architecture/in-house-sdk-and-runtime.md).
