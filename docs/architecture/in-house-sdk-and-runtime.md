@@ -9,6 +9,12 @@ We still call **models** (local or frontier inference), but every layer of
 orchestration, tool execution, sandboxing, context management, and the SDK
 surface is ours. The model is a dependency; the runtime is not.
 
+> 📘 **New here?** Start with the illustrated
+> [Lumey Agent Runtime & SDK — learning guide](lumey-runtime-sdk-guide.md):
+> a level-by-level walkthrough with diagrams, the MoSCoW, use cases, and how it
+> differs from market agent stacks. This document is the build plan / decision
+> record behind it.
+
 > This amends `docs/planning/SDK-DECISION.md`. The CTO's `RuntimeAdapter`
 > firewall is retained and is exactly what makes building in-house low-risk: our
 > runtime is just the first *real* adapter behind a seam we already shipped
