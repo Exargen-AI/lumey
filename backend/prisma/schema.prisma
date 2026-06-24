@@ -512,6 +512,12 @@ model Task {
   // here (FK rule below) so archiving a product preserves task history.
   productId           String?
   assigneeId          String?
+  // Mixed assignment: when assigneeId is null and agentPoolRole is set, the
+  // task is open for ANY agent whose `User.agentRole` matches — a capability
+  // pool rather than a named assignee. The agent control-plane picker claims
+  // it atomically on pickup (sets assigneeId), so two agents can't both grab
+  // it. Ignored once assigneeId is set.
+  agentPoolRole       String?
   creatorId           String
   dueDate             DateTime?
   labels              String[]
@@ -563,6 +569,8 @@ model Task {
   @@unique([projectId, taskNumber])
   @@index([projectId, status])
   @@index([assigneeId])
+  // Agent-pool pickup queries filter on (assigneeId IS NULL, agentPoolRole, status).
+  @@index([agentPoolRole])
   // "What's assigned to X in project Y" is the engineer-dashboard query.
   // The bare `assigneeId` index works but Postgres has to filter projectId
   // post-fetch; the composite makes that direct (QA finding #44).

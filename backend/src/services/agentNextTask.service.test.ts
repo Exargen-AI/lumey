@@ -38,6 +38,10 @@ function makeTask(overrides: Record<string, any> = {}) {
     sprintId: overrides.sprintId ?? null,
     dueDate: overrides.dueDate ?? null,
     storyPoints: overrides.storyPoints ?? null,
+    // Default fixture is directly assigned to the calling agent (so the claim
+    // path is skipped). Pool tests override assigneeId:null + agentPoolRole.
+    assigneeId: overrides.assigneeId === undefined ? AGENT_ID : overrides.assigneeId,
+    agentPoolRole: overrides.agentPoolRole ?? null,
     // Default fixture is agent-ready: real agent-assigned tasks carry a
     // checkable definition of done. Tests override with [] to exercise the
     // Definition-of-Ready gate.
@@ -83,7 +87,9 @@ describe('getNextTaskForAgent — empty / null-return cases', () => {
     prismaMock.sprint.findMany.mockResolvedValue([] as any);
     await getNextTaskForAgent(AGENT_ID, 'AGENT');
     const args = prismaMock.task.findMany.mock.calls[0]?.[0] as any;
-    expect(args.where.assigneeId).toBe(AGENT_ID);
+    // Assignment is now an OR: directly-assigned (+ pool when the agent has a
+    // role). No role mocked here → just the directly-assigned clause.
+    expect(args.where.OR).toEqual([{ assigneeId: AGENT_ID }]);
     expect(args.where.isBlocked).toBe(false);
     expect(args.where.status.in).toEqual(['BACKLOG', 'TODO', 'IN_PROGRESS']);
     // CRITICAL: must NOT include DONE or IN_REVIEW.
@@ -245,5 +251,87 @@ describe('getNextTaskForAgent — response shape', () => {
     expect(result?.task.blockingTaskIds).toEqual(['t-downstream-1', 't-downstream-2']);
     expect(result?.task.projectSlug).toBe('exargen-com');
     expect(result?.rationale).toContain('P0');
+  });
+});
+
+describe('getNextTaskForAgent — mixed assignment (agent capability pool)', () => {
+  it('queries directly-assigned AND pool tasks matching the agent role', async () => {
+    prismaMock.user.findUnique.mockResolvedValue({ agentRole: 'coder' } as any);
+    prismaMock.task.findMany.mockResolvedValue([] as any);
+    prismaMock.sprint.findMany.mockResolvedValue([] as any);
+
+    await getNextTaskForAgent(AGENT_ID, 'AGENT');
+
+    const where = (prismaMock.task.findMany.mock.calls[0]?.[0] as any).where;
+    expect(where.OR).toEqual([
+      { assigneeId: AGENT_ID },
+      { assigneeId: null, agentPoolRole: 'coder' },
+    ]);
+  });
+
+  it('omits the pool clause when the agent has no capability role', async () => {
+    prismaMock.user.findUnique.mockResolvedValue({ agentRole: null } as any);
+    prismaMock.task.findMany.mockResolvedValue([] as any);
+    prismaMock.sprint.findMany.mockResolvedValue([] as any);
+
+    await getNextTaskForAgent(AGENT_ID, 'AGENT');
+
+    const where = (prismaMock.task.findMany.mock.calls[0]?.[0] as any).where;
+    expect(where.OR).toEqual([{ assigneeId: AGENT_ID }]);
+  });
+
+  it('atomically claims an open pool task on pickup', async () => {
+    prismaMock.user.findUnique.mockResolvedValue({ agentRole: 'coder' } as any);
+    prismaMock.task.findMany.mockResolvedValue([
+      makeTask({ id: 't-pool', assigneeId: null, agentPoolRole: 'coder' }),
+    ] as any);
+    prismaMock.sprint.findMany.mockResolvedValue([] as any);
+    prismaMock.task.updateMany.mockResolvedValue({ count: 1 } as any);
+
+    const result = await getNextTaskForAgent(AGENT_ID, 'AGENT');
+
+    expect(prismaMock.task.updateMany).toHaveBeenCalledWith({
+      where: { id: 't-pool', assigneeId: null },
+      data: { assigneeId: AGENT_ID },
+    });
+    expect(result?.task.id).toBe('t-pool');
+  });
+
+  it('yields null when the pool-claim race is lost (another agent won)', async () => {
+    prismaMock.user.findUnique.mockResolvedValue({ agentRole: 'coder' } as any);
+    prismaMock.task.findMany.mockResolvedValue([
+      makeTask({ id: 't-pool', assigneeId: null, agentPoolRole: 'coder' }),
+    ] as any);
+    prismaMock.sprint.findMany.mockResolvedValue([] as any);
+    prismaMock.task.updateMany.mockResolvedValue({ count: 0 } as any);
+
+    const result = await getNextTaskForAgent(AGENT_ID, 'AGENT');
+    expect(result).toBeNull();
+  });
+
+  it('does not claim a task already assigned to the agent', async () => {
+    prismaMock.user.findUnique.mockResolvedValue({ agentRole: 'coder' } as any);
+    prismaMock.task.findMany.mockResolvedValue([
+      makeTask({ id: 't-mine', assigneeId: AGENT_ID }),
+    ] as any);
+    prismaMock.sprint.findMany.mockResolvedValue([] as any);
+
+    const result = await getNextTaskForAgent(AGENT_ID, 'AGENT');
+
+    expect(prismaMock.task.updateMany).not.toHaveBeenCalled();
+    expect(result?.task.id).toBe('t-mine');
+  });
+
+  it('still enforces Definition of Ready on pool tasks', async () => {
+    prismaMock.user.findUnique.mockResolvedValue({ agentRole: 'coder' } as any);
+    prismaMock.task.findMany.mockResolvedValue([
+      makeTask({ id: 't-pool', assigneeId: null, agentPoolRole: 'coder', acceptanceCriteria: [] }),
+    ] as any);
+    prismaMock.sprint.findMany.mockResolvedValue([] as any);
+
+    const result = await getNextTaskForAgent(AGENT_ID, 'AGENT');
+
+    expect(result).toBeNull();
+    expect(prismaMock.task.updateMany).not.toHaveBeenCalled();
   });
 });

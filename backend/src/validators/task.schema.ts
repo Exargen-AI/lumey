@@ -72,6 +72,9 @@ export const updateTaskSchema = z.object({
     epicId: z.string().uuid().nullable().optional(),
     milestoneId: z.string().uuid().nullable().optional(),
     assigneeId: z.string().uuid().nullable().optional(),
+    // Mixed assignment: open the task to an agent capability pool (free-form
+    // role, matched against User.agentRole). Ignored once assigneeId is set.
+    agentPoolRole: z.string().max(50).nullable().optional(),
     dueDate: taskDate.nullable().optional(),
     labels: z.array(z.string().max(50)).max(20).optional(),
     // Same shape as create — see note above. Aligned with the PATCH

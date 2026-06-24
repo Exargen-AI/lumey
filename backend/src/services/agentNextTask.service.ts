@@ -144,11 +144,25 @@ export async function getNextTaskForAgent(
   // dependencies (tasks blocking IT) are its `linksTo` rows (where it's
   // the toTask). Its OUTGOING dependencies (tasks it blocks) are its
   // `linksFrom` rows.
+  // The agent's capability (free-form `agentRole`, e.g. "coder") decides which
+  // open POOL tasks it may claim. Tasks already assigned to it are always in
+  // scope regardless of role.
+  const me = await prisma.user.findUnique({
+    where: { id: agentUserId },
+    select: { agentRole: true },
+  });
+  const agentRole = me?.agentRole ?? null;
+
   const candidates = await prisma.task.findMany({
     where: {
-      assigneeId: agentUserId,
       status: { in: ACTIONABLE_STATUSES },
       isBlocked: false,
+      // Mixed assignment: tasks assigned directly to this agent, OR open pool
+      // tasks (unassigned) whose required capability matches the agent's role.
+      OR: [
+        { assigneeId: agentUserId },
+        ...(agentRole ? [{ assigneeId: null, agentPoolRole: agentRole }] : []),
+      ],
     },
     include: {
       project: { select: { id: true, slug: true } },
@@ -227,6 +241,23 @@ export async function getNextTaskForAgent(
   });
 
   const winner = ready[0];
+
+  // If the winner is an OPEN POOL task (not yet assigned to this agent), claim
+  // it atomically: a conditional update that only succeeds while assigneeId is
+  // still null. If another agent claimed it first the update touches 0 rows —
+  // we've lost the race, so return null and let the runtime poll again rather
+  // than hand out a task two agents both believe they own.
+  if (winner.assigneeId === null) {
+    const claim = await prisma.task.updateMany({
+      where: { id: winner.id, assigneeId: null },
+      data: { assigneeId: agentUserId },
+    });
+    if (claim.count === 0) {
+      logger.debug({ taskId: winner.id }, '[agent next-task] lost pool-claim race — yielding');
+      return null;
+    }
+  }
+
   const rationale = buildRationale(winner, inActiveSprint(winner));
 
   return {
