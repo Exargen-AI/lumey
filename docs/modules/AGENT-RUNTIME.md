@@ -529,10 +529,37 @@ source is still `LUMEY_RUN_REPO_PATH`).
 **Tests:** `resolveRunRepoConfig` returns the project's repo / null without an
 integration / null for a missing task.
 
-## Next — beyond M2.12
+## M2.13 — workspace clone management (runs on the project's real repo)
 
-**Workspace clone management** (clone the project repo into a per-project cache,
-worktree from it — retiring `LUMEY_RUN_REPO_PATH`), **installation-token auth**,
-**background execution**, then **memory** and **Outcomes** grading. Full build
-plan:
+The last workspace env bridge retires: a run now gets a worktree of the task's
+**project repo**, cloned once into a per-project cache. Code:
+`runtime/workspace/repoWorkspace.ts` + `adapters/native.ts`.
+
+- **`ensureRepoClone({ remoteUrl, cacheKey, authHeader? })`** — clones the repo
+  into `<cache>/owner/repo` if absent, `git fetch`es if present, returns the
+  path. Shell-free git, cache-key path-traversal-sanitized, injectable for tests.
+- **Token hygiene** — auth is supplied per-command via `http.extraheader`, so a
+  token is used at clone/fetch time but **never persisted** to the clone's
+  `.git/config` (origin URL stays tokenless); redacted from surfaced output.
+- **Native workspace, in priority order** — (1) the project repo (cloned →
+  worktree from `origin/<defaultBranch>`, needs `LUMEY_GITHUB_TOKEN`); (2) a
+  `LUMEY_RUN_REPO_PATH` local repo (single-repo override); (3) a temp dir.
+
+Combined with M2.12, a configured deployment now runs **each project's tasks on
+that project's own repo** end to end — clone, branch, commit, push, PR.
+
+**Scope (MoSCoW):** Must ✅ (clone-or-fetch cache; worktree from the cached
+clone; fallbacks; tests) · Should ✅ (token never persisted to disk; cache-key
+sanitization; failed-clone cleanup) · Won't this increment (a clone lock for
+concurrent runs of the same repo; shallow/partial clones; cache eviction).
+
+**Tests** (real git, temp origin repo, no network): clones when absent; fetches
+new commits on an existing clone; contains a traversal cache key; cleans up and
+throws on an unclonable remote.
+
+## Next — beyond M2.13
+
+**Background execution** (a long real run stops blocking the request — cancel
+plumbing already exists), **installation-token auth** (a GitHub App over the
+deployment PAT), then **memory** and **Outcomes** grading. Full build plan:
 [`docs/architecture/in-house-sdk-and-runtime.md`](../architecture/in-house-sdk-and-runtime.md).

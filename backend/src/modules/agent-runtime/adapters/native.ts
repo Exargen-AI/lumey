@@ -34,6 +34,7 @@ import { createGitHubProvider } from '../runtime/git/githubProvider';
 import type { GitProvider } from '../runtime/git/gitProvider';
 import { linkPullRequestToTask } from '../../../services/taskPullRequestLink.service';
 import { resolveRunRepoConfig } from '../../../services/runRepoConfig.service';
+import { ensureRepoClone } from '../runtime/workspace/repoWorkspace';
 import { modelClientFromEnv } from '../runtime/model/factory';
 import type { ModelClient, ChatMessage } from '../runtime/model/types';
 import type { Sandbox } from '../runtime/sandbox/sandbox';
@@ -73,12 +74,25 @@ async function tempDirSandbox(): Promise<Sandbox> {
 }
 
 /**
- * The default workspace: a git **worktree** of a configured repo when
- * `LUMEY_RUN_REPO_PATH` is set (so the agent runs on real code, runs its tests,
- * and commits to a run branch), else a fresh temp dir. A proper per-project repo
- * config replaces the env bridge when project git settings land.
+ * The run workspace, in priority order:
+ *   1. the task's **project repo** — cloned once into a per-project cache, then
+ *      worktreed from `origin/<defaultBranch>` (needs `LUMEY_GITHUB_TOKEN`);
+ *   2. a `LUMEY_RUN_REPO_PATH` local repo (single-repo override);
+ *   3. a fresh temp dir (no repo configured — the simulator path).
  */
-async function repoAwareSandbox(): Promise<Sandbox> {
+async function repoAwareSandbox(ctx: RunContext): Promise<Sandbox> {
+  const token = process.env.LUMEY_GITHUB_TOKEN;
+  if (token) {
+    const cfg = await resolveRunRepoConfig(ctx.taskId);
+    if (cfg) {
+      const repoPath = await ensureRepoClone({
+        remoteUrl: `https://github.com/${cfg.owner}/${cfg.repo}.git`,
+        cacheKey: `${cfg.owner}/${cfg.repo}`,
+        authHeader: `Authorization: Bearer ${token}`,
+      });
+      return WorktreeSandbox.create({ repoPath, ref: `origin/${cfg.baseBranch}` });
+    }
+  }
   const repoPath = process.env.LUMEY_RUN_REPO_PATH;
   if (repoPath) return WorktreeSandbox.create({ repoPath, ref: process.env.LUMEY_RUN_REF });
   return tempDirSandbox();
