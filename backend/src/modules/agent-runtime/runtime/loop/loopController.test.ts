@@ -9,7 +9,8 @@ import { ContextEngine } from '../context/contextEngine';
 import { buildSystemPrompt } from '../context/systemPrompt';
 import { ToolRunner } from '../tools/toolRunner';
 import { defaultTools } from '../tools/builtins';
-import { createRunTestsTool, createGitCommitTool } from '../tools/finalize';
+import { createRunTestsTool, createGitCommitTool, createOpenPrTool } from '../tools/finalize';
+import { referenceGitProvider } from '../git/referenceProvider';
 import { WorktreeSandbox } from '../sandbox/worktreeSandbox';
 import type { ModelClient, ModelResponse, CompletionRequest, ModelToolCall } from '../model/types';
 import type { RunContext } from '../../runtimeAdapter';
@@ -210,16 +211,25 @@ describe('LoopController — full agent flow over a real git worktree', () => {
       await git(repo, ['commit', '-qm', 'init']);
 
       sb = await WorktreeSandbox.create({ repoPath: repo });
+      const linkedPrs: { externalId: string; title: string }[] = [];
       const runTools = new ToolRunner([
         ...defaultTools(),
         createRunTestsTool({ command: `${process.execPath} -e "process.exit(0)"` }),
         createGitCommitTool({ branch: 'lumey/run-e2e' }),
+        createOpenPrTool({
+          provider: referenceGitProvider,
+          branch: 'lumey/run-e2e',
+          onOpened: async (ref, input) => {
+            linkedPrs.push({ externalId: ref.externalId, title: input.title });
+          },
+        }),
       ]);
       const model = new ScriptedModel([
         callTool('c1', 'write_file', '{"path":"feature.js","content":"module.exports = 1;"}'),
         callTool('c2', 'run_tests', '{}'),
         callTool('c3', 'git_commit', '{"message":"add feature"}'),
-        say('Implemented and committed; please review.'),
+        callTool('c4', 'open_pr', '{"title":"Add feature","body":"done"}'),
+        say('Implemented, committed, and opened a PR; please review.'),
       ]);
       const recorder = new FakeRecorder();
       const ctxEngine = new ContextEngine(buildSystemPrompt(CTX, runTools.list()));
@@ -230,12 +240,15 @@ describe('LoopController — full agent flow over a real git worktree', () => {
       // the commit landed on the run branch inside the worktree
       const log = await git(sb.root, ['log', '--oneline', '-1', 'lumey/run-e2e']);
       expect(log.out).toContain('add feature');
-      // the trace shows write → test → commit → review
+      // the PR was opened and linked to the task
+      expect(linkedPrs).toHaveLength(1);
+      expect(linkedPrs[0].title).toBe('Add feature');
+      // the trace shows write → test → commit → PR/review
       const types = recorder.steps.map((s) => s.type);
       expect(types).toContain(RunStepType.EDIT);
       expect(types).toContain(RunStepType.TEST);
       expect(types).toContain(RunStepType.COMMAND); // git_commit
-      expect(types).toContain(RunStepType.REVIEW_REQUEST);
+      expect(types).toContain(RunStepType.REVIEW_REQUEST); // open_pr + finalize
     } finally {
       if (sb) await sb.dispose();
       await fs.rm(repo, { recursive: true, force: true });

@@ -14,6 +14,7 @@ import {
   DEFAULT_ALLOWED_BINARIES,
   checkCommand,
 } from './guardrails';
+import type { GitProvider, PullRequestInput, PullRequestRef } from '../git/gitProvider';
 import type { ToolContext, ToolDefinition, ToolOutput } from './types';
 
 export interface RunTestsOptions {
@@ -74,6 +75,37 @@ export function createGitCommitTool(opts: GitCommitOptions): ToolDefinition<{ me
       const head = await sandbox.exec('git', ['rev-parse', 'HEAD'], { signal });
       const sha = head.stdout.trim();
       return { content: `Committed on ${opts.branch} (${sha.slice(0, 9)})`, data: { ok: true, branch: opts.branch, sha } };
+    },
+  };
+}
+
+export interface OpenPrOptions {
+  /** The host that actually opens the PR (reference simulator / GitHub / …). */
+  readonly provider: GitProvider;
+  /** The run branch to open the PR from. */
+  readonly branch: string;
+  /** The branch to merge into. Default `main`. */
+  readonly base?: string;
+  /** Server-side hook to link the opened PR to its task (DB write). */
+  readonly onOpened?: (ref: PullRequestRef, input: PullRequestInput) => Promise<void>;
+}
+
+/** Open a pull request for the run branch and request human review. */
+export function createOpenPrTool(opts: OpenPrOptions): ToolDefinition<{ title: string; body?: string }> {
+  const base = opts.base || 'main';
+  return {
+    name: 'open_pr',
+    description: 'Open a pull request for the run branch and request human review. Use once the work is committed and tests pass.',
+    mutates: true,
+    schema: z.object({
+      title: z.string().describe('Pull request title.'),
+      body: z.string().describe('Pull request description.').optional(),
+    }),
+    async handler({ title, body }): Promise<ToolOutput> {
+      const input: PullRequestInput = { branch: opts.branch, base, title, body: body ?? '' };
+      const ref = await opts.provider.openPullRequest(input);
+      if (opts.onOpened) await opts.onOpened(ref, input);
+      return { content: `Opened PR ${ref.externalId} (${ref.url}) for ${ref.branch} → ${base}`, data: ref };
     },
   };
 }

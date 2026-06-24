@@ -402,11 +402,46 @@ over a real git worktree** where the agent writes code → runs tests → commit
 `lumey/run-e2e` → requests review, asserting the commit actually landed on the
 branch and the trace shows EDIT → TEST → COMMAND → REVIEW_REQUEST.
 
-## Next — beyond M2.8
+## M2.9 — open_pr + PR linking (the loop closes)
 
-On the same seam: **open a real PR** (push the run branch + create the PR via git
-telemetry — needs remote/auth), **per-project repo config** (replace the env
-bridge), **background execution** (long runs don't block the request), then
-**memory** and **Outcomes** grading. And **Part B — the Lumey Platform SDK**
-(schema-first TS + Python codegen). Full build plan:
+The agent now **opens a pull request and tags a human** — the work lands where a
+reviewer already looks. Code: `runtime/git/` + `runtime/tools/finalize.ts` +
+`services/taskPullRequestLink.service.ts`.
+
+- **GitProvider seam** (`runtime/git/gitProvider.ts`) — the firewall between the
+  runtime and whatever hosts the repo. Opening a PR is provider-specific; the
+  runtime only sees a neutral `PullRequestRef`. Same philosophy as the
+  RuntimeAdapter seam: swap hosts by writing a provider.
+- **`referenceGitProvider`** — a deterministic, dependency-free simulator
+  (fabricates a stable PR ref from the branch; no remote, no push). The default,
+  so the flow works with no GitHub auth. A real `github` provider (push +
+  create PR via the project's GitHub integration) slots in behind the seam.
+- **`open_pr` tool** — opens the PR via the provider and invokes a server-side
+  `onOpened` hook; the loop traces it as a `REVIEW_REQUEST` step.
+- **`linkPullRequestToTask`** — upserts a `TaskExternalLink` (kind `GITHUB_PR`),
+  the **same surface the GitHub webhook populates**, so an agent-opened PR shows
+  up in the task's **Linked PRs** exactly like a human-opened one. Idempotent on
+  `(taskId, kind, externalId)`.
+
+The native adapter binds `open_pr` per run with the reference provider and links
+to `ctx.taskId`. End to end, a run now does **write → test → commit → open PR →
+request review**, and the PR appears on the task.
+
+**Scope (MoSCoW):** Must ✅ (GitProvider seam + reference provider; open_pr tool;
+PR→task linking; loop step-typing; tests) · Should ✅ (idempotent link on the
+existing TaskExternalLink surface; deterministic simulator; per-run wiring) ·
+Won't this increment (the real `github` provider — push the branch + create the
+PR via the project GitHub integration/auth; PR state sync back from merge).
+
+**Tests** (incl. the full-flow e2e over a real git worktree): deterministic
+reference provider; open_pr opens + links (callback fired with the ref);
+`linkPullRequestToTask` upsert shape; and the e2e where the agent writes →
+tests → commits → **opens a PR (linked)** → requests review.
+
+## Next — beyond M2.9
+
+The real **`github` GitProvider** (push the run branch + create the PR through
+the project's GitHub integration), **per-project repo config** (replace the env
+bridge), **background execution**, then **memory** and **Outcomes** grading. And
+more **SDK** surface as endpoints land. Full build plan:
 [`docs/architecture/in-house-sdk-and-runtime.md`](../architecture/in-house-sdk-and-runtime.md).

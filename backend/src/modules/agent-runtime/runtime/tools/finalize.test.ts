@@ -1,10 +1,12 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { promises as fs } from 'fs';
 import os from 'os';
 import path from 'path';
 import { spawn } from 'child_process';
 import { WorktreeSandbox } from '../sandbox/worktreeSandbox';
-import { createRunTestsTool, createGitCommitTool } from './finalize';
+import { createRunTestsTool, createGitCommitTool, createOpenPrTool } from './finalize';
+import { referenceGitProvider } from '../git/referenceProvider';
+import type { Sandbox } from '../sandbox/sandbox';
 import type { ToolContext } from './types';
 
 const NODE = process.execPath;
@@ -93,5 +95,30 @@ describe('git_commit', () => {
     } finally {
       await fs.rm(plain, { recursive: true, force: true });
     }
+  });
+});
+
+describe('open_pr', () => {
+  const noSandbox = { sandbox: {} as unknown as Sandbox } satisfies ToolContext;
+
+  it('opens a PR via the provider and links it to the task', async () => {
+    const onOpened = vi.fn().mockResolvedValue(undefined);
+    const tool = createOpenPrTool({ provider: referenceGitProvider, branch: 'lumey/run-x', base: 'develop', onOpened });
+
+    const out = await tool.handler({ title: 'My PR', body: 'desc' }, noSandbox);
+
+    expect(out.content).toContain('Opened PR');
+    expect(out.content).toContain('develop');
+    expect((out.data as { branch: string }).branch).toBe('lumey/run-x');
+    expect(onOpened).toHaveBeenCalledWith(
+      expect.objectContaining({ branch: 'lumey/run-x', externalId: expect.stringMatching(/^local\/sandbox#/) }),
+      expect.objectContaining({ title: 'My PR', base: 'develop' }),
+    );
+  });
+
+  it('defaults the base branch to main', async () => {
+    const tool = createOpenPrTool({ provider: referenceGitProvider, branch: 'b' });
+    const out = await tool.handler({ title: 'T' }, noSandbox);
+    expect(out.content).toContain('→ main');
   });
 });

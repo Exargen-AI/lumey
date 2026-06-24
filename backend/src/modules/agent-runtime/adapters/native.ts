@@ -28,7 +28,9 @@ import { ContextEngine } from '../runtime/context/contextEngine';
 import { buildSystemPrompt } from '../runtime/context/systemPrompt';
 import { ToolRunner } from '../runtime/tools/toolRunner';
 import { defaultTools } from '../runtime/tools/builtins';
-import { createRunTestsTool, createGitCommitTool } from '../runtime/tools/finalize';
+import { createRunTestsTool, createGitCommitTool, createOpenPrTool } from '../runtime/tools/finalize';
+import { referenceGitProvider } from '../runtime/git/referenceProvider';
+import { linkPullRequestToTask } from '../../../services/taskPullRequestLink.service';
 import { modelClientFromEnv } from '../runtime/model/factory';
 import type { ModelClient, ChatMessage } from '../runtime/model/types';
 import type { Sandbox } from '../runtime/sandbox/sandbox';
@@ -78,10 +80,19 @@ async function repoAwareSandbox(): Promise<Sandbox> {
 
 /** The default toolset for a run: the coding tools plus run-scoped finalize tools. */
 function defaultRunTools(ctx: RunContext): ToolRunner {
+  const branch = `lumey/run-${ctx.runId}`;
   return new ToolRunner([
     ...defaultTools(),
     createRunTestsTool({ command: process.env.LUMEY_TEST_CMD }),
-    createGitCommitTool({ branch: `lumey/run-${ctx.runId}` }),
+    createGitCommitTool({ branch }),
+    createOpenPrTool({
+      provider: referenceGitProvider, // a real GitHub provider slots in behind the same seam
+      branch,
+      base: process.env.LUMEY_PR_BASE,
+      onOpened: async (ref, input) => {
+        await linkPullRequestToTask(ctx.taskId, { externalId: ref.externalId, url: ref.url, title: input.title });
+      },
+    }),
   ]);
 }
 
