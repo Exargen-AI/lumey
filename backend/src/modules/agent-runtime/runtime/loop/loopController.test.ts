@@ -55,11 +55,15 @@ class ThrowingModel implements ModelClient {
 class FakeRecorder implements RunRecorder {
   readonly steps: { type: RunStepType; title: string; detail?: string }[] = [];
   readonly transitions: { to: RunStatus; summary?: string; error?: string }[] = [];
+  usageRecorded: { inputTokens: number; outputTokens: number; totalTokens: number } | null = null;
   async step(input: { type: RunStepType; title: string; detail?: string }) {
     this.steps.push(input);
   }
   async transition(to: RunStatus, opts?: { summary?: string; error?: string }) {
     this.transitions.push({ to, ...opts });
+  }
+  async usage(usage: { inputTokens: number; outputTokens: number; totalTokens: number }) {
+    this.usageRecorded = usage;
   }
 }
 
@@ -112,6 +116,10 @@ describe('LoopController (end-to-end over real sandbox + tools + context)', () =
     expect(outcome.status).toBe(RunStatus.AWAITING_REVIEW);
     expect(outcome.summary).toContain('Implemented');
     expect(recorder.transitions.map((t) => t.to)).toEqual([RunStatus.RUNNING, RunStatus.AWAITING_REVIEW]);
+
+    // token usage was accumulated across the turns and recorded
+    expect(recorder.usageRecorded?.totalTokens).toBe(30); // 3 turns × 10
+    expect(outcome.tokensUsed).toBe(30);
 
     // the trace describes what happened
     const stepTypes = recorder.steps.map((s) => s.type);

@@ -468,9 +468,41 @@ merge — that already flows via the existing webhook).
 PR + maps the ref; redacts the token on push failure; surfaces a 422; requires
 token/owner/repo.
 
-## Next — beyond M2.10
+## M2.11 — run usage & cost (observable *and costed* by construction)
+
+The docs claimed runs were "costed by construction" — now they are. The loop
+*computed* token usage but discarded it; M2.11 **persists it and surfaces it**
+through the API and both SDK clients.
+
+- **Model** — `AgentRun` gains `inputTokens` / `outputTokens` / `totalTokens`
+  (migration `20260624020000_add_agent_run_usage`). Cost is **not** stored — it's
+  derived from tokens by consumers via a *current* pricing table, so a stale rate
+  is never baked in.
+- **Runtime** — the `LoopController` accumulates per-turn usage (prompt →
+  input, completion → output) and records it via a new `RunRecorder.usage` seam
+  on finish; the native adapter binds it to `agentRun.service.recordUsage`.
+- **API** — the run summary/detail already pass the run through, so the token
+  fields surface automatically.
+- **SDK** — the contract gains the token fields (TS + regenerated Python), and
+  **`runs.usage(taskId, runId, { pricing? })`** returns
+  `{inputTokens, outputTokens, totalTokens, estimatedCostUsd}` — the cost is
+  `null` unless the caller supplies pricing (mechanism, not a guess).
+
+Verified end-to-end against the live backend: `runs.usage` returns the token
+fields + a cost estimate.
+
+**Scope (MoSCoW):** Must ✅ (token capture on the run; loop records usage;
+surfaced via API; tests) · Should ✅ (SDK `runs.usage` + cost-estimation
+mechanism; Python parity) · Won't this increment (a built-in pricing table —
+rates are deployment-owned; per-step usage breakdown; cost budgets/alerts).
+
+**Tests:** the loop accumulates + records usage (e2e asserts the total); the
+native adapter persists it; the SDK `runs.usage` returns tokens with/without
+cost, and `estimateCostUsd` is null-without-pricing / per-1M correct.
+
+## Next — beyond M2.11
 
 **Per-project repo config + installation-token auth** (replace the env bridge
-end to end), **background execution**, then **memory** and **Outcomes** grading;
-plus more **SDK** surface as endpoints land. Full build plan:
+end to end), **background execution**, then **memory** and **Outcomes** grading.
+Full build plan:
 [`docs/architecture/in-house-sdk-and-runtime.md`](../architecture/in-house-sdk-and-runtime.md).

@@ -19,6 +19,7 @@ import {
 } from './contract/schemas';
 import { LumeyContractError } from './errors';
 import { HttpTransport, type Transport } from './transport';
+import { estimateCostUsd, type ModelPricing, type RunUsage } from './usage';
 
 function parse<T>(schema: z.ZodType<T>, data: unknown, what: string): T {
   const result = schema.safeParse(data);
@@ -65,6 +66,13 @@ class RunsResource {
   /** Cancel an in-flight run. */
   async cancel(taskId: string, runId: string, opts: { idempotencyKey?: string; signal?: AbortSignal } = {}): Promise<void> {
     await this.t.request<unknown>('POST', `/tasks/${taskId}/runs/${runId}/cancel`, { body: {}, idempotencyKey: opts.idempotencyKey, signal: opts.signal });
+  }
+
+  /** A run's token usage, with a USD cost estimate when `pricing` is supplied. */
+  async usage(taskId: string, runId: string, opts: { pricing?: ModelPricing; signal?: AbortSignal } = {}): Promise<RunUsage> {
+    const run = await this.get(taskId, runId, { signal: opts.signal });
+    const tokens = { inputTokens: run.inputTokens, outputTokens: run.outputTokens };
+    return { ...tokens, totalTokens: run.totalTokens, estimatedCostUsd: estimateCostUsd(tokens, opts.pricing ?? null) };
   }
 
   /**

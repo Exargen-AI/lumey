@@ -1222,6 +1222,12 @@ model AgentRun {
   model     String? // model that produced the work (free-form, e.g. claude-opus-4-8)
   summary   String?   @db.Text // agent's run summary: what / why / risks
   error     String?   @db.Text // failure cause when status = FAILED
+  // Token usage accumulated across the run's model turns (the loop records it on
+  // finish). Cost is derived from these by consumers via a current pricing table,
+  // so a stale rate is never baked into storage.
+  inputTokens  Int @default(0)
+  outputTokens Int @default(0)
+  totalTokens  Int @default(0)
   startedAt DateTime? // first transition into RUNNING
   endedAt   DateTime? // transition into a terminal state
   createdAt DateTime  @default(now())

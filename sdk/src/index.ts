@@ -25,3 +25,5 @@ export { LumeyError, LumeyConnectionError, LumeyAuthError, LumeyUnavailableError
 export { RunStatusSchema, RunStepTypeSchema, TaskRefSchema, AgentRunSummarySchema, RunStepSchema, RunEventSchema, AgentRunDetailSchema, CONTRACT, type RunStatus, type RunStepType, type TaskRef, type AgentRunSummary, type RunStep, type RunEvent, type AgentRunDetail } from './contract/schemas';
 // ts-prune-ignore-next
 export { toJsonSchema, contractJsonSchema } from './contract/jsonSchema';
+// ts-prune-ignore-next
+export { estimateCostUsd, type ModelPricing, type RunUsage } from './usage';

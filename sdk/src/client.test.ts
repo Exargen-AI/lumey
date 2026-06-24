@@ -12,6 +12,9 @@ const RUN: AgentRunSummary = {
   model: null,
   summary: 'done',
   error: null,
+  inputTokens: 0,
+  outputTokens: 0,
+  totalTokens: 0,
   startedAt: null,
   endedAt: null,
   createdAt: '2026-06-24T00:00:00.000Z',
@@ -113,5 +116,20 @@ describe('runs.events (resumable stream)', () => {
     for await (const ev of lumey.runs.events('T', 'R', { pollMs: 0, maxPolls: 3 })) seen.push(ev.seq);
     expect(seen).toEqual([1]); // only new events (seq 1 once)
     expect(transport.calls).toHaveLength(3);
+  });
+});
+
+describe('runs.usage', () => {
+  const withTokens = (i: number, o: number, t: number) => ({ ...RUN, inputTokens: i, outputTokens: o, totalTokens: t, steps: [], events: [] });
+
+  it('returns token usage with no cost when pricing is omitted', async () => {
+    const { lumey } = client(() => withTokens(100, 50, 150));
+    expect(await lumey.runs.usage('T', 'R')).toEqual({ inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: null });
+  });
+
+  it('estimates cost when pricing is supplied', async () => {
+    const { lumey } = client(() => withTokens(1_000_000, 1_000_000, 2_000_000));
+    const u = await lumey.runs.usage('T', 'R', { pricing: { inputPer1M: 3, outputPer1M: 15 } });
+    expect(u.estimatedCostUsd).toBe(18); // 1M·$3 + 1M·$15 per 1M
   });
 });

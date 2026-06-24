@@ -60,6 +60,8 @@ describe('nativeAdapter.execute', () => {
     expect(transitionRunSpy).toHaveBeenNthCalledWith(1, 'r1', RunStatus.RUNNING);
     expect(transitionRunSpy).toHaveBeenLastCalledWith('r1', RunStatus.AWAITING_REVIEW, expect.objectContaining({ summary: expect.stringContaining('done') }));
     expect(appendStepSpy).toHaveBeenCalled();
+    // run usage was persisted
+    expect(prismaMock.agentRun.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ totalTokens: 1 }) }));
   });
 
   it('fails the run with a clear error when no model is configured', async () => {

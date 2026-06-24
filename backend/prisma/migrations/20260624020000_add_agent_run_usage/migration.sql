@@ -1,0 +1,5 @@
+-- AlterTable
+ALTER TABLE "agent_runs" ADD COLUMN     "inputTokens" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN     "outputTokens" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN     "totalTokens" INTEGER NOT NULL DEFAULT 0;
+

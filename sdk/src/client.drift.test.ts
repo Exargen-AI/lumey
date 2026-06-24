@@ -6,7 +6,8 @@ import type { AgentRunSummary } from './contract/schemas';
 
 const RUN: AgentRunSummary = {
   id: 'R', taskId: 'T', agentId: 'a', status: 'AWAITING_REVIEW',
-  model: null, summary: null, error: null, startedAt: null, endedAt: null, createdAt: '2026-01-01T00:00:00.000Z',
+  model: null, summary: null, error: null, inputTokens: 0, outputTokens: 0, totalTokens: 0,
+  startedAt: null, endedAt: null, createdAt: '2026-01-01T00:00:00.000Z',
 };
 const TASK = { id: 'T', title: 't', status: 'TODO' };
 

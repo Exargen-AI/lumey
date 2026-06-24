@@ -20,7 +20,7 @@ import os from 'os';
 import path from 'path';
 import { RunStatus } from '@prisma/client';
 import prisma from '../../../config/database';
-import { appendStep, transitionRun } from '../../../services/agentRun.service';
+import { appendStep, transitionRun, recordUsage } from '../../../services/agentRun.service';
 import { isTerminal } from '../../../lib/runLifecycle';
 import type { RuntimeAdapter, RunContext } from '../runtimeAdapter';
 import { LoopController, type LoopBudget, type RunRecorder } from '../runtime/loop/loopController';
@@ -57,6 +57,9 @@ function serviceRecorder(runId: string): RunRecorder {
     async transition(to, opts) {
       if (opts) await transitionRun(runId, to, opts);
       else await transitionRun(runId, to);
+    },
+    async usage(usage) {
+      await recordUsage(runId, usage);
     },
   };
 }

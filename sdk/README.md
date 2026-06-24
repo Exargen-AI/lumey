@@ -59,6 +59,8 @@ const task = await lumey.tasks.next(); // → { id: 't1', ... }, no network
 - `runs.start(taskId)` · `runs.list(taskId)` · `runs.get(taskId, runId)` · `runs.cancel(taskId, runId)`.
 - `runs.events(taskId, runId)` — a **resumable** async stream of trace events
   (cursor via `sinceSeq`, stops at a terminal status).
+- `runs.usage(taskId, runId, { pricing? })` — token usage + an optional USD cost
+  estimate (cost is `null` unless you supply pricing — the SDK never guesses rates).
 
 Grows with the platform: `context.compile`, `hitl.requestReview/clarify/approve`,
 `git.link`, and `kg.query` as those endpoints land.

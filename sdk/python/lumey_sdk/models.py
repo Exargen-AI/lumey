@@ -27,6 +27,9 @@ class AgentRunSummary(TypedDict, total=False):
     model: Optional[str]
     summary: Optional[str]
     error: Optional[str]
+    inputTokens: float
+    outputTokens: float
+    totalTokens: float
     startedAt: Optional[str]
     endedAt: Optional[str]
     createdAt: str
@@ -59,6 +62,9 @@ class AgentRunDetail(TypedDict, total=False):
     model: Optional[str]
     summary: Optional[str]
     error: Optional[str]
+    inputTokens: float
+    outputTokens: float
+    totalTokens: float
     startedAt: Optional[str]
     endedAt: Optional[str]
     createdAt: str

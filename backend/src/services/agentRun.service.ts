@@ -119,6 +119,21 @@ export async function appendStep(
   return step;
 }
 
+/** Record the token usage accumulated over a run (called once, on finish). */
+export async function recordUsage(
+  runId: string,
+  usage: { inputTokens: number; outputTokens: number; totalTokens: number },
+) {
+  return prisma.agentRun.update({
+    where: { id: runId },
+    data: {
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      totalTokens: usage.totalTokens,
+    },
+  });
+}
+
 /** Read a run with its ordered steps + trace events. */
 export async function getRun(runId: string) {
   const run = await prisma.agentRun.findUnique({

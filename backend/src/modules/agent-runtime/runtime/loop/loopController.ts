@@ -24,9 +24,16 @@ import type { ToolResult } from '../tools/types';
 import type { ContextEngine } from '../context/contextEngine';
 import type { Sandbox } from '../sandbox/sandbox';
 
+export interface RunUsage {
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly totalTokens: number;
+}
+
 export interface RunRecorder {
   step(input: { type: RunStepType; title: string; detail?: string }): Promise<void>;
   transition(to: RunStatus, opts?: { summary?: string; error?: string }): Promise<void>;
+  usage(usage: RunUsage): Promise<void>;
 }
 
 export interface LoopBudget {
@@ -84,11 +91,11 @@ export class LoopController {
   async run(): Promise<LoopOutcome> {
     await this.d.recorder.transition(RunStatus.RUNNING);
     const transcript: ChatMessage[] = [];
-    let tokensUsed = 0;
+    const usage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
     let turns = 0;
 
     while (turns < this.maxSteps) {
-      if (this.aborted()) return this.finishCancelled(turns, tokensUsed);
+      if (this.aborted()) return this.finishCancelled(turns, usage);
       turns++;
 
       const messages = await this.d.context.assemble(transcript);
@@ -96,10 +103,12 @@ export class LoopController {
       try {
         response = await this.d.model.complete({ messages, tools: this.d.tools.list(), signal: this.d.signal });
       } catch (e) {
-        if (this.aborted()) return this.finishCancelled(turns, tokensUsed);
-        return this.finishFailed(turns, tokensUsed, e);
+        if (this.aborted()) return this.finishCancelled(turns, usage);
+        return this.finishFailed(turns, usage, e);
       }
-      tokensUsed += response.usage.totalTokens;
+      usage.inputTokens += response.usage.promptTokens;
+      usage.outputTokens += response.usage.completionTokens;
+      usage.totalTokens += response.usage.totalTokens;
 
       transcript.push({
         role: 'assistant',
@@ -109,7 +118,7 @@ export class LoopController {
 
       // No tool calls ⇒ the model has produced its final answer / review request.
       if (response.toolCalls.length === 0) {
-        return this.finishAwaitingReview(turns, tokensUsed, response.content || 'Run complete; awaiting human review.');
+        return this.finishAwaitingReview(turns, usage, response.content || 'Run complete; awaiting human review.');
       }
 
       if (response.content.trim()) {
@@ -122,12 +131,12 @@ export class LoopController {
         transcript.push({ role: 'tool', content: r.content, toolCallId: response.toolCalls[i].id, name: r.name });
       });
 
-      if (tokensUsed >= this.maxTokens) {
-        return this.finishAwaitingReview(turns, tokensUsed, `Reached the token budget (${this.maxTokens}) after ${turns} turn(s); handing to human for review.`);
+      if (usage.totalTokens >= this.maxTokens) {
+        return this.finishAwaitingReview(turns, usage, `Reached the token budget (${this.maxTokens}) after ${turns} turn(s); handing to human for review.`);
       }
     }
 
-    return this.finishAwaitingReview(turns, tokensUsed, `Reached the ${this.maxSteps}-step ceiling; handing to human for review.`);
+    return this.finishAwaitingReview(turns, usage, `Reached the ${this.maxSteps}-step ceiling; handing to human for review.`);
   }
 
   private async recordToolResults(calls: readonly ModelToolCall[], results: ToolResult[]): Promise<void> {
@@ -146,20 +155,23 @@ export class LoopController {
     return this.d.signal?.aborted ?? false;
   }
 
-  private async finishAwaitingReview(turns: number, tokensUsed: number, summary: string): Promise<LoopOutcome> {
+  private async finishAwaitingReview(turns: number, usage: RunUsage, summary: string): Promise<LoopOutcome> {
     await this.d.recorder.step({ type: RunStepType.REVIEW_REQUEST, title: 'Request review', detail: firstLine(summary, 200) });
+    await this.d.recorder.usage(usage);
     await this.d.recorder.transition(RunStatus.AWAITING_REVIEW, { summary });
-    return { status: RunStatus.AWAITING_REVIEW, turns, tokensUsed, summary };
+    return { status: RunStatus.AWAITING_REVIEW, turns, tokensUsed: usage.totalTokens, summary };
   }
 
-  private async finishFailed(turns: number, tokensUsed: number, error: unknown): Promise<LoopOutcome> {
+  private async finishFailed(turns: number, usage: RunUsage, error: unknown): Promise<LoopOutcome> {
     const message = error instanceof Error ? error.message : String(error);
+    await this.d.recorder.usage(usage);
     await this.d.recorder.transition(RunStatus.FAILED, { error: message });
-    return { status: RunStatus.FAILED, turns, tokensUsed, summary: message };
+    return { status: RunStatus.FAILED, turns, tokensUsed: usage.totalTokens, summary: message };
   }
 
-  private async finishCancelled(turns: number, tokensUsed: number): Promise<LoopOutcome> {
+  private async finishCancelled(turns: number, usage: RunUsage): Promise<LoopOutcome> {
+    await this.d.recorder.usage(usage);
     await this.d.recorder.transition(RunStatus.CANCELLED, { summary: 'Run cancelled.' });
-    return { status: RunStatus.CANCELLED, turns, tokensUsed };
+    return { status: RunStatus.CANCELLED, turns, tokensUsed: usage.totalTokens };
   }
 }
