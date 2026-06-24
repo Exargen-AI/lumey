@@ -47,6 +47,7 @@ import openapiRoutes from './routes/openapi.routes';
 import { ModuleRegistry, ConfigEntitlements } from './kernel';
 import { commentsModule } from './modules/comments';
 import { notificationsModule } from './modules/notifications';
+import { agentRuntimeModule } from './modules/agent-runtime';
 
 const app = express();
 
@@ -58,6 +59,7 @@ const app = express();
 const registry = new ModuleRegistry(new ConfigEntitlements());
 registry.register(commentsModule);
 registry.register(notificationsModule);
+registry.register(agentRuntimeModule);
 
 // Middleware stack — Security hardened
 //
