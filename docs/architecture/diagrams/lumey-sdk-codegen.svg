@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 470" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif">
+  <defs>
+    <linearGradient id="bg2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0b1020"/><stop offset="1" stop-color="#0f172a"/></linearGradient>
+    <linearGradient id="src" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#7c2d12"/><stop offset="1" stop-color="#9a3412"/></linearGradient>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"/></marker>
+  </defs>
+  <rect x="0" y="0" width="880" height="470" rx="18" fill="url(#bg2)"/>
+  <text x="40" y="46" fill="#e2e8f0" font-size="24" font-weight="700">One contract → two clients → zero drift</text>
+  <text x="40" y="70" fill="#94a3b8" font-size="13.5">The Lumey Platform SDK is schema-first: types and operations are declared once and both clients derive from them.</text>
+
+  <!-- Source of truth -->
+  <rect x="330" y="100" width="220" height="120" rx="12" fill="url(#src)" stroke="#fb923c" stroke-width="1.5"/>
+  <text x="440" y="128" fill="#ffedd5" font-size="14.5" font-weight="700" text-anchor="middle">THE CONTRACT</text>
+  <text x="440" y="150" fill="#fed7aa" font-size="11.5" text-anchor="middle">single source of truth</text>
+  <rect x="350" y="162" width="180" height="22" rx="6" fill="#431407" stroke="#fdba74"/>
+  <text x="440" y="177" fill="#ffedd5" font-size="11" text-anchor="middle">schemas.ts (zod types)</text>
+  <rect x="350" y="188" width="180" height="22" rx="6" fill="#431407" stroke="#fdba74"/>
+  <text x="440" y="203" fill="#ffedd5" font-size="11" text-anchor="middle">operations.ts (the surface)</text>
+
+  <!-- TS client -->
+  <rect x="40" y="280" width="360" height="150" rx="12" fill="#0b3b35" stroke="#2dd4bf" stroke-width="1.5"/>
+  <text x="60" y="308" fill="#ccfbf1" font-size="14.5" font-weight="700">TypeScript client  (hand-written, contract-checked)</text>
+  <text x="60" y="332" fill="#a7f3d0" font-size="11.5">• validates every response against the zod contract</text>
+  <text x="60" y="352" fill="#a7f3d0" font-size="11.5">• a drift test asserts it matches operations.ts</text>
+  <text x="60" y="372" fill="#a7f3d0" font-size="11.5">• typed errors · idempotent writes · retry · streams</text>
+  <text x="60" y="398" fill="#5eead4" font-size="11" font-style="italic">LumeyClient — tasks.next · runs.start/list/get/cancel/events</text>
+
+  <!-- Python client -->
+  <rect x="480" y="280" width="360" height="150" rx="12" fill="#0c2a4d" stroke="#38bdf8" stroke-width="1.5"/>
+  <text x="500" y="308" fill="#e0f2fe" font-size="14.5" font-weight="700">Python client  (GENERATED)</text>
+  <text x="500" y="332" fill="#bae6fd" font-size="11.5">• emitted from JSON-Schema + the operations manifest</text>
+  <text x="500" y="352" fill="#bae6fd" font-size="11.5">• dependency-free (urllib) · same errors + idempotency</text>
+  <text x="500" y="372" fill="#bae6fd" font-size="11.5">• `npm run gen:python` regenerates from the contract</text>
+  <text x="500" y="398" fill="#7dd3fc" font-size="11" font-style="italic">lumey_sdk.LumeyClient — same surface, Python-native</text>
+
+  <!-- arrows -->
+  <line x1="400" y1="180" x2="230" y2="278" stroke="#94a3b8" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="278" y="240" fill="#cbd5e1" font-size="11" transform="rotate(-30 278 240)">checked against</text>
+  <line x1="480" y1="180" x2="650" y2="278" stroke="#94a3b8" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="556" y="236" fill="#cbd5e1" font-size="11" transform="rotate(30 556 236)">generated from</text>
+
+  <text x="440" y="456" fill="#64748b" font-size="11.5" text-anchor="middle">Same JSON-Schema also feeds OpenAPI / docs. Add a language = add a generator — the contract never moves.</text>
+</svg>

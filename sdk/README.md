@@ -57,22 +57,38 @@ const task = await lumey.tasks.next(); // → { id: 't1', ... }, no network
 
 - `tasks.next()` — the next ready task for the authenticated agent (or `null`).
 - `runs.start(taskId)` · `runs.list(taskId)` · `runs.get(taskId, runId)` · `runs.cancel(taskId, runId)`.
+- `runs.events(taskId, runId)` — a **resumable** async stream of trace events
+  (cursor via `sinceSeq`, stops at a terminal status).
 
 Grows with the platform: `context.compile`, `hitl.requestReview/clarify/approve`,
-`git.link`, `kg.query`, and resumable typed event streams are on the roadmap.
+`git.link`, and `kg.query` as those endpoints land.
 
-## Cross-language codegen
+## Cross-language codegen — TypeScript + Python
 
-The contract lives once, as `zod` schemas (`src/contract/schemas.ts`).
-`contractJsonSchema()` renders it as JSON-Schema — the input a Python (or any)
-client generator consumes, so every language client is produced from the *same*
-source the TypeScript client validates against. The generated Python client is
-the next increment.
+The contract lives once: `zod` types in `src/contract/schemas.ts` and the
+operation surface in `src/contract/operations.ts`. `contractJsonSchema()` renders
+it as JSON-Schema, and the **Python client is generated from it**:
+
+```bash
+npm run gen:python --workspace=sdk     # → python/lumey_sdk/ (dependency-free, urllib)
+```
+
+```python
+from lumey_sdk import LumeyClient
+lumey = LumeyClient("http://localhost:3000/api/v1", token)
+run = lumey.runs.start(task_id)
+```
+
+A **drift test** (`src/client.drift.test.ts`) asserts the TypeScript client
+matches the operations manifest, so both clients stay true to the one contract.
 
 ## Build & test
 
 ```bash
 npm run build --workspace=sdk      # → dist/ (CommonJS; works via require & import)
-npm run test  --workspace=sdk      # 20 tests, no network
+npm run test  --workspace=sdk      # 34 tests, no network
+npm run gen:python --workspace=sdk # regenerate the Python client
 npm run typecheck --workspace=sdk
 ```
+
+Full guide: [`docs/architecture/lumey-sdk-guide.md`](../docs/architecture/lumey-sdk-guide.md).

@@ -14,6 +14,7 @@ import {
   TaskRefSchema,
   type AgentRunDetail,
   type AgentRunSummary,
+  type RunEvent,
   type TaskRef,
 } from './contract/schemas';
 import { LumeyContractError } from './errors';
@@ -64,6 +65,38 @@ class RunsResource {
   /** Cancel an in-flight run. */
   async cancel(taskId: string, runId: string, opts: { idempotencyKey?: string; signal?: AbortSignal } = {}): Promise<void> {
     await this.t.request<unknown>('POST', `/tasks/${taskId}/runs/${runId}/cancel`, { body: {}, idempotencyKey: opts.idempotencyKey, signal: opts.signal });
+  }
+
+  /**
+   * A **resumable** stream of a run's trace events. Polls until the run is
+   * terminal (or the caller aborts / hits `maxPolls`), yielding only events
+   * newer than the cursor — so on reconnect you pass the last `seq` you saw via
+   * `sinceSeq` and resume exactly where you left off. (Server-push SSE will back
+   * this transparently once the platform exposes it; the cursor contract is the
+   * same.)
+   */
+  async *events(
+    taskId: string,
+    runId: string,
+    opts: { sinceSeq?: number; pollMs?: number; maxPolls?: number; signal?: AbortSignal } = {},
+  ): AsyncIterable<RunEvent> {
+    const pollMs = opts.pollMs ?? 1000;
+    const terminal = new Set(['SUCCEEDED', 'FAILED', 'CANCELLED']);
+    let cursor = opts.sinceSeq ?? 0;
+    let polls = 0;
+    for (;;) {
+      if (opts.signal?.aborted) return;
+      const detail = await this.get(taskId, runId, { signal: opts.signal });
+      for (const ev of detail.events) {
+        if (ev.seq > cursor) {
+          cursor = ev.seq;
+          yield ev;
+        }
+      }
+      if (terminal.has(detail.status)) return;
+      if (opts.maxPolls !== undefined && ++polls >= opts.maxPolls) return;
+      await new Promise((r) => setTimeout(r, pollMs));
+    }
   }
 }
 

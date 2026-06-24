@@ -77,3 +77,41 @@ describe('runs', () => {
     await expect(lumey.runs.start('task1')).rejects.toBeInstanceOf(LumeyContractError);
   });
 });
+
+describe('runs.events (resumable stream)', () => {
+  function detail(status: string, seqs: number[]) {
+    return {
+      ...RUN,
+      status,
+      steps: [],
+      events: seqs.map((seq) => ({ id: `e${seq}`, seq, type: 'run.step.recorded', payload: {}, at: '2026-01-01T00:00:00.000Z' })),
+    };
+  }
+
+  it('yields new events across polls and stops at a terminal status', async () => {
+    const responses = [detail('RUNNING', [1, 2]), detail('SUCCEEDED', [1, 2, 3])];
+    let i = 0;
+    const { lumey } = client(() => responses[Math.min(i++, responses.length - 1)]);
+
+    const seen: number[] = [];
+    for await (const ev of lumey.runs.events('T', 'R', { pollMs: 0 })) seen.push(ev.seq);
+
+    expect(seen).toEqual([1, 2, 3]); // de-duped across polls, in order
+    expect(i).toBe(2); // stopped polling once terminal
+  });
+
+  it('resumes from a cursor (sinceSeq)', async () => {
+    const { lumey } = client(() => detail('SUCCEEDED', [1, 2, 3]));
+    const seen: number[] = [];
+    for await (const ev of lumey.runs.events('T', 'R', { pollMs: 0, sinceSeq: 2 })) seen.push(ev.seq);
+    expect(seen).toEqual([3]); // only events after the cursor
+  });
+
+  it('stops at maxPolls when the run never terminates', async () => {
+    const { lumey, transport } = client(() => detail('RUNNING', [1]));
+    const seen: number[] = [];
+    for await (const ev of lumey.runs.events('T', 'R', { pollMs: 0, maxPolls: 3 })) seen.push(ev.seq);
+    expect(seen).toEqual([1]); // only new events (seq 1 once)
+    expect(transport.calls).toHaveLength(3);
+  });
+});

@@ -10,12 +10,14 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "gen:python": "tsx scripts/gen-python.cli.ts"
   },
   "dependencies": {
     "zod": "^3.23.0"
   },
   "devDependencies": {
+    "tsx": "^4.16.0",
     "typescript": "^5.5.0",
     "vitest": "^2.1.9"
   }
