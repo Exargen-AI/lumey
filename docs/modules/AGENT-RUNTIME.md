@@ -268,11 +268,52 @@ lifecycle**; zod→JSON-Schema mapping; guardrail allow/deny (incl. deny-wins);
 every builtin incl. edit uniqueness + grep dir-skipping + bash block; and the
 runner's full failure-to-`ok:false` matrix.
 
-## Next (M2.6+)
+## M2.6 — ContextEngine (token efficiency)
 
-The **ContextEngine** (M2.6 — prompt assembly + prefix-stable caching +
-compaction), then the **LoopController** wired as the `native` adapter (M2.7),
-which composes ModelClient + ToolRunner + Sandbox + ContextEngine into a real
-run and lights up the *same* start-run API and trace UI shipped in M2.3. Full
-build plan:
+Where cost is won: the ContextEngine assembles the prompt for each model turn
+and keeps it within a token budget. Code: `runtime/context/`.
+
+| Piece | Role |
+|---|---|
+| `systemPrompt.ts` | `buildSystemPrompt(ctx, tools)` — the **stable prefix**, built once per run from the task + tool catalog. Strictly static (no timestamps/counters) so its bytes never change across turns. |
+| `tokens.ts` | `estimateTokens` / `estimateMessagesTokens` — a fast ~4-chars/token heuristic that errs toward over-counting (compact early, never overflow). Injectable, so a real tokenizer can replace it. |
+| `contextEngine.ts` | `assemble(transcript)` — applies the three levers below and returns the turn's `ChatMessage[]`. |
+
+**Three levers, in order:**
+1. **Prefix-stable assembly** — the system prompt is byte-identical every turn
+   and always `message[0]`; per-turn material is *appended*, never folded into
+   the prefix. Stable leading bytes are what let prompt / KV caches hit instead
+   of re-encoding the whole context each turn — the single biggest cost lever.
+2. **Context editing** — no single tool result can dominate the window:
+   oversized `tool` outputs are clipped to a cap with an elision marker.
+3. **Compaction** — when the prompt would exceed the budget, the oldest turns
+   are summarized into one note and the most recent turns kept verbatim. The
+   summarizer is **pluggable** — a model-backed one in the loop, a deterministic
+   structural one by default (so this is fully testable without a model).
+
+**Wire-safety:** compaction never leaves an orphaned `tool` message (one whose
+`assistant` tool-call was summarized away) at the head of the kept window — the
+split point advances past leading tool results.
+
+**Scope (MoSCoW):** Must ✅ (stable system prompt; token estimation; budgeted
+assembly with compaction; tests) · Should ✅ (context editing of tool results;
+pluggable summarizer; orphan-tool wire-safety; injectable estimator) · Won't
+this increment (knowledge-graph / knowledge-pack context compilation — slots in
+as another prefix section when the KG lands; a real tokenizer; semantic
+deduplication of tool results).
+
+**Tests** (15 cases): system-prompt content + byte-stability + defensive
+criteria/description rendering; token-estimator monotonicity + overhead;
+pass-through under budget, prefix stability as the transcript grows, tool-result
+clipping, compaction (structural + injected summarizer), and orphan-tool
+avoidance.
+
+## Next (M2.7+)
+
+The **LoopController** wired as the `native` adapter (M2.7) — composing
+ModelClient + ContextEngine + ToolRunner + Sandbox into a real agentic loop that
+drives a run through the lifecycle, recording each turn as a `RunStep`/`RunEvent`
+and lighting up the *same* start-run API and trace UI shipped in M2.3 (with the
+`referenceAdapter` still covering demos until `native` is ready). Full build
+plan:
 [`docs/architecture/in-house-sdk-and-runtime.md`](../architecture/in-house-sdk-and-runtime.md).
