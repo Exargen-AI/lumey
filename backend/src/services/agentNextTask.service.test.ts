@@ -38,7 +38,11 @@ function makeTask(overrides: Record<string, any> = {}) {
     sprintId: overrides.sprintId ?? null,
     dueDate: overrides.dueDate ?? null,
     storyPoints: overrides.storyPoints ?? null,
-    acceptanceCriteria: overrides.acceptanceCriteria ?? [],
+    // Default fixture is agent-ready: real agent-assigned tasks carry a
+    // checkable definition of done. Tests override with [] to exercise the
+    // Definition-of-Ready gate.
+    acceptanceCriteria:
+      overrides.acceptanceCriteria ?? [{ id: 'ac-1', text: 'Works as specified', done: false }],
     isBlocked: overrides.isBlocked ?? false,
     createdAt: overrides.createdAt ?? new Date('2026-01-01T00:00:00Z'),
     project: overrides.project ?? { id: 'proj-1', slug: 'exargen' },
@@ -110,6 +114,25 @@ describe('getNextTaskForAgent — empty / null-return cases', () => {
           { type: 'BLOCKS', fromTask: { id: 'blocker', status: 'DONE' } },
         ],
       }),
+    ] as any);
+    prismaMock.sprint.findMany.mockResolvedValue([] as any);
+    const result = await getNextTaskForAgent(AGENT_ID, 'AGENT');
+    expect(result?.task.id).toBe('t-ready');
+  });
+
+  it('skips a task with no acceptance criteria (Definition of Ready not met)', async () => {
+    prismaMock.task.findMany.mockResolvedValue([
+      makeTask({ id: 't-unspecified', acceptanceCriteria: [] }),
+    ] as any);
+    prismaMock.sprint.findMany.mockResolvedValue([] as any);
+    const result = await getNextTaskForAgent(AGENT_ID, 'AGENT');
+    expect(result).toBeNull();
+  });
+
+  it('readiness overrides priority — a ready P2 beats an unspecified P0', async () => {
+    prismaMock.task.findMany.mockResolvedValue([
+      makeTask({ id: 't-unspecified', priority: 'P0', acceptanceCriteria: [] }),
+      makeTask({ id: 't-ready', priority: 'P2' }),
     ] as any);
     prismaMock.sprint.findMany.mockResolvedValue([] as any);
     const result = await getNextTaskForAgent(AGENT_ID, 'AGENT');

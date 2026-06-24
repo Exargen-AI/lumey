@@ -1,5 +1,7 @@
 import prisma from '../config/database';
 import { ForbiddenError } from '../utils/errors';
+import { logger } from '../lib/logger';
+import { evaluateAgentReadiness } from '../lib/taskReadiness';
 import type { Task, TaskPriority, TaskStatus } from '@prisma/client';
 
 /**
@@ -169,10 +171,20 @@ export async function getNextTaskForAgent(
 
   if (candidates.length === 0) return null;
 
-  // Filter out tasks with unsatisfied BLOCKS dependencies.
-  const ready = candidates.filter((t) =>
-    t.linksTo.every((link) => link.fromTask.status === 'DONE'),
-  );
+  // Filter out tasks with unsatisfied BLOCKS dependencies, then apply the
+  // Definition of Ready: an agent only picks up a task that declares a
+  // checkable "done" (≥1 acceptance criterion). A not-ready task is a poison
+  // task — surfaced at debug so under-specified work is diagnosable, not
+  // silently dropped. See lib/taskReadiness.
+  const ready = candidates
+    .filter((t) => t.linksTo.every((link) => link.fromTask.status === 'DONE'))
+    .filter((t) => {
+      const readiness = evaluateAgentReadiness(t);
+      if (!readiness.ready) {
+        logger.debug({ taskId: t.id, reason: readiness.reason }, '[agent next-task] task not agent-ready — skipped');
+      }
+      return readiness.ready;
+    });
   if (ready.length === 0) return null;
 
   // Active-sprint preference: tasks in the project's currently ACTIVE
