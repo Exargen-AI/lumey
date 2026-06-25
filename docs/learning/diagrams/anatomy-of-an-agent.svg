@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 600" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0a0a1a"/><stop offset="1" stop-color="#141432"/></linearGradient>
+    <radialGradient id="core" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#a78bfa"/><stop offset="1" stop-color="#6d28d9"/></radialGradient>
+  </defs>
+  <rect width="900" height="600" rx="20" fill="url(#sky)"/>
+  <text x="40" y="50" fill="#f8fafc" font-size="27" font-weight="800">Anatomy of the Lumey agent</text>
+  <text x="40" y="76" fill="#94a3b8" font-size="14">A language model becomes a software engineer one layer at a time. Each ring is a concept we built.</text>
+
+  <!-- concentric rings -->
+  <g transform="translate(300,360)">
+    <circle r="210" fill="none" stroke="#1e293b" stroke-width="1"/>
+    <circle r="170" fill="none" stroke="#1e293b" stroke-width="1"/>
+    <circle r="130" fill="none" stroke="#1e293b" stroke-width="1"/>
+    <circle r="90" fill="none" stroke="#1e293b" stroke-width="1"/>
+    <!-- core: the model -->
+    <circle r="58" fill="url(#core)"/>
+    <text y="-4" text-anchor="middle" fill="#faf5ff" font-size="14" font-weight="700">LLM</text>
+    <text y="16" text-anchor="middle" fill="#ede9fe" font-size="10.5">predicts the</text>
+    <text y="30" text-anchor="middle" fill="#ede9fe" font-size="10.5">next token</text>
+
+    <!-- ring labels (colored dots on the rings) -->
+    <g font-size="12" font-weight="700">
+      <circle cx="0" cy="-90" r="7" fill="#22d3ee"/>
+      <circle cx="0" cy="-130" r="7" fill="#34d399"/>
+      <circle cx="0" cy="-170" r="7" fill="#fbbf24"/>
+      <circle cx="0" cy="-210" r="7" fill="#fb7185"/>
+    </g>
+  </g>
+
+  <!-- callouts on the right -->
+  <g font-size="13">
+    <rect x="560" y="120" width="300" height="58" rx="10" fill="#0c2a4d" stroke="#22d3ee"/>
+    <text x="576" y="143" fill="#a5f3fc" font-weight="700">+ a loop → an AGENT</text>
+    <text x="576" y="163" fill="#bae6fd" font-size="11.5">think → act → observe → repeat (LoopController)</text>
+
+    <rect x="560" y="190" width="300" height="58" rx="10" fill="#0b3b35" stroke="#34d399"/>
+    <text x="576" y="213" fill="#a7f3d0" font-weight="700">+ tools → HANDS</text>
+    <text x="576" y="233" fill="#bbf7d0" font-size="11.5">read · write · edit · grep · bash · open_pr</text>
+
+    <rect x="560" y="260" width="300" height="58" rx="10" fill="#3b2f0b" stroke="#fbbf24"/>
+    <text x="576" y="283" fill="#fde68a" font-weight="700">+ retrieval (RAG) → KNOWLEDGE</text>
+    <text x="576" y="303" fill="#fef08a" font-size="11.5">recall what matters into the context window</text>
+
+    <rect x="560" y="330" width="300" height="58" rx="10" fill="#3b0d1a" stroke="#fb7185"/>
+    <text x="576" y="353" fill="#fecdd3" font-weight="700">+ guardrails → SAFETY</text>
+    <text x="576" y="373" fill="#fecaca" font-size="11.5">sandbox · allowlist · least privilege</text>
+
+    <rect x="560" y="400" width="300" height="58" rx="10" fill="#2e1065" stroke="#a78bfa"/>
+    <text x="576" y="423" fill="#ddd6fe" font-weight="700">+ self-grading → QUALITY (Outcomes)</text>
+    <text x="576" y="443" fill="#e9d5ff" font-size="11.5">grade vs criteria → revise → review</text>
+
+    <rect x="560" y="470" width="300" height="58" rx="10" fill="#0f2a1a" stroke="#4ade80"/>
+    <text x="576" y="493" fill="#bbf7d0" font-weight="700">+ delegation → SCALE (multi-agent)</text>
+    <text x="576" y="513" fill="#bbf7d0" font-size="11.5">a lead spawns workers with isolated context</text>
+  </g>
+
+  <text x="40" y="566" fill="#64748b" font-size="12">The model is the only dependency. Every ring around it — the loop, tools, memory, guardrails, grading, delegation — we built in-house.</text>
+</svg>
