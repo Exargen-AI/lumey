@@ -82,6 +82,12 @@ covering the UI throughout.
   context**, the shared sandbox, bounded budget, and no-recursion guardrails;
   `capabilities().multiAgent = true`. **Native caps now all on: self-hosted ✓ ·
   memory ✓ · outcomes ✓ · multi-agent ✓.**
+- **M2.19 — semantic RAG (local embeddings)** ✅ — memory recall upgraded from
+  recency to **cosine similarity over local embeddings** (`nomic-embed-text` via
+  Ollama, 768-dim): an `EmbeddingClient` (raw HTTP, local-only) + `lib/vector`
+  (cosine / rank); the native adapter embeds the task to recall *relevant*
+  learnings and embeds the summary on record. Degrades to recency when no
+  embedding model is set. Verified live (0.70 same-meaning vs 0.37 unrelated).
 
 ## Part B — the Platform SDK (in-house, schema-first)
 
@@ -111,5 +117,5 @@ TypeScript *and* generated Python, with a drift guard.
 
 ## Health (current)
 
-1097 backend tests + 39 SDK tests green · typecheck clean (backend + frontend +
+1110 backend tests + 39 SDK tests green · typecheck clean (backend + frontend +
 sdk) · zero dead exports · green at every commit.

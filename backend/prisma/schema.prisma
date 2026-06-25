@@ -1259,6 +1259,10 @@ model AgentMemory {
   kind        String // e.g. run-summary, convention, gotcha
   content     String   @db.Text
   sourceRunId String? // the run that produced it, when applicable
+  // Semantic embedding of `content` (a Float[] stored as JSON) for similarity
+  // recall. Null when no embedding model is configured — recall falls back to
+  // recency. JSON (not pgvector) keeps it dependency-free; cosine runs in app code.
+  embedding   Json?
   createdAt   DateTime @default(now())
 
   @@index([projectId, createdAt])

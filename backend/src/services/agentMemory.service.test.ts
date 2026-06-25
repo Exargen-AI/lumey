@@ -18,6 +18,35 @@ describe('recordMemory', () => {
     expect(await recordMemory({ projectId: 'p1', kind: 'x', content: '   ' })).toBeNull();
     expect(prismaMock.agentMemory.create).not.toHaveBeenCalled();
   });
+
+  it('stores a semantic embedding when provided', async () => {
+    prismaMock.agentMemory.create.mockResolvedValue({ id: 'm1' } as never);
+    await recordMemory({ projectId: 'p1', kind: 'run-summary', content: 'did X', embedding: [0.1, 0.2] });
+    expect(prismaMock.agentMemory.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ embedding: [0.1, 0.2] }),
+    });
+  });
+});
+
+describe('recallMemories (semantic RAG)', () => {
+  it('ranks candidates by cosine similarity to the query embedding', async () => {
+    prismaMock.agentMemory.findMany.mockResolvedValue([
+      { id: 'far', content: 'far', embedding: [0, 1] },
+      { id: 'near', content: 'near', embedding: [1, 0] },
+      { id: 'mid', content: 'mid', embedding: [0.8, 0.2] },
+    ] as never);
+    const out = await recallMemories('p1', { queryEmbedding: [1, 0], limit: 2 });
+    expect(out.map((m: { id: string }) => m.id)).toEqual(['near', 'mid']);
+  });
+
+  it('falls back to recency when no candidate has an embedding yet', async () => {
+    prismaMock.agentMemory.findMany.mockResolvedValue([
+      { id: 'a', content: 'a', embedding: null },
+      { id: 'b', content: 'b', embedding: null },
+    ] as never);
+    const out = await recallMemories('p1', { queryEmbedding: [1, 0], limit: 1 });
+    expect(out.map((m: { id: string }) => m.id)).toEqual(['a']); // newest-first slice
+  });
 });
 
 describe('recallMemories', () => {

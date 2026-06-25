@@ -126,12 +126,19 @@ flowchart LR
   the question's vector (cosine similarity). This finds *relevant* facts even when
   the words differ ("auth bug" matches "login fails").
 
-**How Lumey does it:** our **cross-run memory** (M2.16) is RAG in its first form —
-after a run, we *record* what was learned; before a run, we *recall* the project's
-prior learnings and **augment** the system prompt with them, so the agent doesn't
-relearn the project every time. The retrieval lives in the `ContextEngine` as a
-stable "preamble." *(We're upgrading recall from recency to **semantic embeddings
-— computed by a local model** — next; same shape, smarter retrieval.)*
+**How Lumey does it:** our **cross-run memory** (M2.16) records what each run
+learned; before a run, we *recall* the project's prior learnings and **augment**
+the system prompt with them (the retrieval lives in the `ContextEngine` as a
+stable "preamble"), so the agent doesn't relearn the project every time.
+
+**M2.19 made it *semantic*** — recall now ranks memories by **cosine similarity**
+of their **local embeddings** (`nomic-embed-text` via Ollama, 768 dimensions) to
+the current task, so it surfaces *relevant* learnings even when the words differ.
+We verified this live: *"fix the login auth bug"* scored **0.70** against *"resolve
+the sign-in failure"* (same meaning) but only **0.37** against *"add a dashboard
+chart"* (unrelated). It degrades gracefully to recency when no embedding model is
+configured — and, true to our rule, the embeddings are computed by a **local**
+model, never an online one.
 
 > 🔑 RAG is *not* fine-tuning. Fine-tuning changes the model's weights (expensive,
 > slow). RAG changes the *prompt* (instant, per-request). For "know my codebase,"

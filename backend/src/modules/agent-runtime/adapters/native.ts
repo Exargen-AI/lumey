@@ -40,6 +40,7 @@ import { resolveRunRepoConfig } from '../../../services/runRepoConfig.service';
 import { recallMemories, recordMemory, projectIdForTask } from '../../../services/agentMemory.service';
 import { ensureRepoClone } from '../runtime/workspace/repoWorkspace';
 import { modelClientFromEnv } from '../runtime/model/factory';
+import { embeddingClientFromEnv, type EmbeddingClient } from '../runtime/model/embeddingClient';
 import type { ModelClient, ChatMessage } from '../runtime/model/types';
 import type { Sandbox } from '../runtime/sandbox/sandbox';
 import { WorktreeSandbox } from '../runtime/sandbox/worktreeSandbox';
@@ -176,12 +177,36 @@ async function defaultRunTools(ctx: RunContext, sandbox: Sandbox, model: ModelCl
   ]);
 }
 
-/** Recalled cross-run memories as a stable context preamble for the run. */
-async function memoryPreamble(projectId: string): Promise<ChatMessage[]> {
-  const memories = await recallMemories(projectId, { limit: 8 });
+/** Lazily build the local embedding client from env (once); null if unconfigured. */
+let embedder: EmbeddingClient | null | undefined;
+function getEmbedder(): EmbeddingClient | null {
+  if (embedder !== undefined) return embedder;
+  embedder = embeddingClientFromEnv();
+  return embedder;
+}
+
+/** Embed text with the local model, degrading to undefined on any failure. */
+async function embedText(text: string): Promise<number[] | undefined> {
+  const client = getEmbedder();
+  if (!client) return undefined;
+  try {
+    return await client.embed(text);
+  } catch (err) {
+    logger.warn({ err }, '[agent-runtime] embedding failed; falling back to recency recall');
+    return undefined;
+  }
+}
+
+/**
+ * Recalled cross-run memories as a stable context preamble (RAG). Semantic when
+ * an embedding model is configured (rank by similarity to the task), else recency.
+ */
+async function memoryPreamble(projectId: string, queryText: string): Promise<ChatMessage[]> {
+  const queryEmbedding = await embedText(queryText);
+  const memories = await recallMemories(projectId, { limit: 8, queryEmbedding });
   if (!memories.length) return [];
   const body = memories.map((m) => `- ${m.content}`).join('\n');
-  return [{ role: 'system', content: `Learnings from prior runs on this project (most recent first):\n${body}` }];
+  return [{ role: 'system', content: `Learnings from prior runs on this project (most relevant first):\n${body}` }];
 }
 
 /** Render acceptance criteria as a checklist for the grader prompt. */
@@ -258,7 +283,8 @@ export function createNativeAdapter(deps: NativeAdapterDeps): RuntimeAdapter {
         const projectId = await projectIdForTask(ctx.taskId);
         sandbox = await (deps.sandboxFactory ?? repoAwareSandbox)(ctx);
         const tools = deps.toolsFactory ? deps.toolsFactory() : await defaultRunTools(ctx, sandbox, model);
-        const preamble = projectId ? await memoryPreamble(projectId) : [];
+        const queryText = [ctx.task.title, ctx.task.description ?? ''].join('\n').trim();
+        const preamble = projectId ? await memoryPreamble(projectId, queryText) : [];
         const context = new ContextEngine(buildSystemPrompt(ctx, tools.list()), { summarize: modelSummarizer(model), preamble });
         const loop = new LoopController({
           model,
@@ -272,9 +298,10 @@ export function createNativeAdapter(deps: NativeAdapterDeps): RuntimeAdapter {
           grader: hasAcceptanceCriteria(ctx.task.acceptanceCriteria) ? modelGrader(model, ctx) : undefined,
         });
         const outcome = await loop.run();
-        // Persist what this run learned so future runs on the project recall it.
+        // Persist what this run learned (with its embedding) so future runs recall it.
         if (projectId && outcome.summary) {
-          await recordMemory({ projectId, kind: 'run-summary', content: outcome.summary, sourceRunId: ctx.runId }).catch(() => undefined);
+          const embedding = await embedText(outcome.summary);
+          await recordMemory({ projectId, kind: 'run-summary', content: outcome.summary, sourceRunId: ctx.runId, embedding }).catch(() => undefined);
         }
       } catch (e) {
         await failRun(ctx.runId, e); // a setup error before the loop transitioned RUNNING
