@@ -48,6 +48,11 @@ export function createFrontierModelClient(config: FrontierModelConfig): ModelCli
  *   local:    LUMEY_LOCAL_MODEL (req), LUMEY_LOCAL_MODEL_URL (opt)
  *   frontier: LUMEY_FRONTIER_URL, LUMEY_FRONTIER_MODEL, LUMEY_FRONTIER_API_KEY (all req)
  */
+function timeoutFromEnv(env: NodeJS.ProcessEnv, fallbackMs: number): number {
+  const v = Number(env.LUMEY_MODEL_TIMEOUT_MS);
+  return Number.isFinite(v) && v > 0 ? v : fallbackMs;
+}
+
 export function modelClientFromEnv(env: NodeJS.ProcessEnv = process.env): ModelClient {
   const backend = (env.LUMEY_MODEL_BACKEND ?? 'local').toLowerCase();
   if (backend === 'frontier') {
@@ -55,11 +60,14 @@ export function modelClientFromEnv(env: NodeJS.ProcessEnv = process.env): ModelC
     if (!baseUrl || !model || !apiKey) {
       throw new Error('native runtime: frontier model not configured (set LUMEY_FRONTIER_URL, LUMEY_FRONTIER_MODEL, LUMEY_FRONTIER_API_KEY)');
     }
-    return createFrontierModelClient({ baseUrl, model, apiKey });
+    // Frontier APIs are fast but a cold/long generation still warrants headroom.
+    return createFrontierModelClient({ baseUrl, model, apiKey, timeoutMs: timeoutFromEnv(env, 120_000) });
   }
   const model = env.LUMEY_LOCAL_MODEL;
   if (!model) {
     throw new Error('native runtime: no model configured (set LUMEY_LOCAL_MODEL, or LUMEY_MODEL_BACKEND=frontier with LUMEY_FRONTIER_*)');
   }
-  return createLocalModelClient({ model, baseUrl: env.LUMEY_LOCAL_MODEL_URL });
+  // Local models on consumer hardware are slow — a cold load alone can take ~30s,
+  // and an agentic generation longer — so default to a generous deadline.
+  return createLocalModelClient({ model, baseUrl: env.LUMEY_LOCAL_MODEL_URL, timeoutMs: timeoutFromEnv(env, 300_000) });
 }

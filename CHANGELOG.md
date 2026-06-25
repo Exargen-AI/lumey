@@ -97,6 +97,18 @@ TypeScript *and* generated Python, with a drift guard.
 - **Run usage in the SDK** ✅ (with M2.11) — token fields + `runs.usage` with
   cost estimation; Python regenerated.
 
+## Live verification
+
+- **First live `native` run on a local model** — Ollama + `qwen2.5-coder:7b`,
+  wired via `LUMEY_LOCAL_MODEL` (no code change — just config, proving the
+  model-agnostic seam). A real run drove the loop end to end and the **Outcomes
+  grade→revise loop was visible in the trace** (self-grade FAIL → revise →
+  self-grade PASS → request review). Confirmed: small local models narrate tool
+  use under complex prompts (a model-quality limit, not a runtime one) — a
+  frontier model resolves it via the same seam.
+- **Fix surfaced by the run:** local models default to a **300s** request
+  deadline (a 7B cold-load alone is ~30–60s); env-override `LUMEY_MODEL_TIMEOUT_MS`.
+
 ## Health (current)
 
 1097 backend tests + 39 SDK tests green · typecheck clean (backend + frontend +
