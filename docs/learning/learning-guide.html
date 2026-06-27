@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>The Lumey Learning Guide</title>
+<style>
+  :root{
+    --bg:#0a0a16; --panel:#11132a; --panel2:#0d1024; --ink:#e6e8f2; --muted:#9aa3c0;
+    --line:#23264a; --code:#0b0d1f;
+    --cyan:#22d3ee; --green:#34d399; --amber:#fbbf24; --rose:#fb7185; --purple:#a78bfa; --blue:#60a5fa;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:radial-gradient(1200px 600px at 20% -10%, #1a1640 0, var(--bg) 55%) fixed;color:var(--ink);
+    font:16px/1.65 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  a{color:var(--cyan);text-decoration:none} a:hover{text-decoration:underline}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 22px;display:grid;grid-template-columns:240px 1fr;gap:34px}
+  /* hero */
+  header.hero{grid-column:1/-1;padding:46px 26px 30px;border-bottom:1px solid var(--line);margin-bottom:8px}
+  .hero h1{font-size:38px;margin:0 0 8px;font-weight:850;letter-spacing:-.5px;
+    background:linear-gradient(90deg,#a78bfa,#22d3ee 60%,#34d399);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero p.sub{color:var(--muted);font-size:16.5px;max-width:760px;margin:0}
+  .tldr{margin-top:18px;padding:14px 18px;border-left:3px solid var(--purple);background:#16143655;border-radius:0 10px 10px 0;max-width:820px}
+  .badges{margin-top:16px;display:flex;gap:8px;flex-wrap:wrap}
+  .badge{font-size:12px;padding:4px 10px;border-radius:999px;border:1px solid var(--line);background:#ffffff08;color:var(--muted)}
+  .badge b{color:var(--green)}
+  /* nav */
+  nav{position:sticky;top:18px;align-self:start;font-size:13.5px;max-height:92vh;overflow:auto;padding-right:4px}
+  nav .grp{color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-size:11px;margin:16px 0 6px}
+  nav a{display:block;color:#c3c9e6;padding:3px 0}
+  nav a:hover{color:var(--cyan);text-decoration:none}
+  /* content */
+  main{min-width:0;padding-bottom:80px}
+  h2{font-size:25px;margin:38px 0 6px;font-weight:800;letter-spacing:-.3px}
+  h2 .num{color:var(--blue);font-weight:700;margin-right:8px}
+  h3{font-size:18.5px;margin:26px 0 6px;color:#eef0fb}
+  p{margin:10px 0}
+  .lead{color:var(--muted)}
+  hr{border:0;border-top:1px solid var(--line);margin:34px 0}
+  /* concept card colour accents */
+  .card{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin:16px 0}
+  .card.cyan{border-left:4px solid var(--cyan)} .card.green{border-left:4px solid var(--green)}
+  .card.amber{border-left:4px solid var(--amber)} .card.rose{border-left:4px solid var(--rose)}
+  .card.purple{border-left:4px solid var(--purple)} .card.blue{border-left:4px solid var(--blue)}
+  .card h3{margin-top:0}
+  .pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 9px;border-radius:999px;margin-left:8px;vertical-align:middle}
+  .pill.cyan{background:#0e7490;color:#cffafe}.pill.green{background:#065f46;color:#d1fae5}.pill.amber{background:#854d0e;color:#fef9c3}
+  .pill.rose{background:#9f1239;color:#ffe4e6}.pill.purple{background:#5b21b6;color:#ede9fe}.pill.blue{background:#1e40af;color:#dbeafe}
+  /* callouts */
+  .note{border-radius:10px;padding:12px 15px;margin:14px 0;border:1px solid var(--line);background:#ffffff06}
+  .note.tip{border-left:4px solid var(--green)} .note.lab{border-left:4px solid var(--cyan)}
+  .note.key{border-left:4px solid var(--amber)} .note.money{border-left:4px solid var(--rose)}
+  .note .ic{font-weight:800;margin-right:6px}
+  /* code + tables */
+  code{background:var(--code);border:1px solid var(--line);border-radius:5px;padding:1px 6px;font:13.5px ui-monospace,Menlo,Consolas,monospace;color:#a5f3fc}
+  pre{background:var(--code);border:1px solid var(--line);border-radius:10px;padding:14px 16px;overflow:auto}
+  pre code{border:0;padding:0;color:#cbd5e1;background:none}
+  table{border-collapse:collapse;width:100%;margin:14px 0;font-size:14.5px}
+  th,td{border:1px solid var(--line);padding:8px 11px;text-align:left;vertical-align:top}
+  th{background:#ffffff08;color:#eef0fb}
+  td code{font-size:12.5px}
+  .mermaid{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:16px;margin:16px 0;text-align:center}
+  .heroimg{width:100%;border-radius:14px;border:1px solid var(--line);margin:6px 0 4px}
+  footer{grid-column:1/-1;border-top:1px solid var(--line);margin-top:30px;padding:22px 26px;color:var(--muted);font-size:13.5px}
+  @media(max-width:880px){.wrap{grid-template-columns:1fr}nav{position:static;max-height:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="hero">
+    <h1>🎓 The Lumey Learning Guide</h1>
+    <p class="sub">From “what’s a token?” to a working AI software engineer — every concept explained by the example of a real product we built.</p>
+    <div class="tldr"><b>The 30-second version:</b> an AI agent is a language model wrapped in a <i>loop</i> that lets it <i>use tools</i>, <i>remember</i>, <i>check its own work</i>, and <i>delegate</i>. Lumey is that agent — built from scratch to run on <b>your own local models</b> — picking up a kanban ticket, writing &amp; testing code, opening a PR, and tagging a human.</div>
+    <div class="badges">
+      <span class="badge">In-house runtime · <b>no external agent SDK</b></span>
+      <span class="badge"><b>Local models only</b></span>
+      <span class="badge"><b>1110</b> backend + <b>39</b> SDK tests green</span>
+      <span class="badge">Capabilities: self-hosted · memory · outcomes · multi-agent</span>
+    </div>
+  </header>
+
+  <nav>
+    <div class="grp">Pass 1 — Concepts</div>
+    <a href="#llm">1.1 What is an LLM?</a>
+    <a href="#agent">1.2 LLM → agent (the loop)</a>
+    <a href="#tools">1.3 Tools &amp; function calling</a>
+    <a href="#rag">1.4 RAG (retrieval)</a>
+    <a href="#context">1.5 Context engineering</a>
+    <a href="#guard">1.6 Guardrails &amp; sandbox</a>
+    <a href="#outcomes">1.7 Outcomes (self-grading)</a>
+    <a href="#multi">1.8 Multi-agent</a>
+    <a href="#sdk">1.9 The SDK</a>
+    <div class="grp">Pass 2 — Architecture</div>
+    <a href="#build">How we built it</a>
+    <div class="grp">Pass 3 — Decisions</div>
+    <a href="#research">Research &amp; decisions</a>
+    <a href="#moscow">MoSCoW scoping</a>
+    <div class="grp">Pass 4 — Journey</div>
+    <a href="#journey">Experiences &amp; lessons</a>
+  </nav>
+
+  <main>
+    <img class="heroimg" src="diagrams/anatomy-of-an-agent.svg" alt="Anatomy of the Lumey agent"/>
+    <p class="lead">A language model becomes a software engineer one layer at a time. Each ring around the model — the loop, tools, memory, guardrails, grading, delegation — is a concept we built in-house.</p>
+
+    <hr/>
+    <h2 id="llm"><span class="num">1.1</span>What is a Large Language Model?</h2>
+    <p>An LLM is, at heart, a <b>next-token predictor</b>. You give it text; it predicts the most likely next chunk (a “token” ≈ ¾ of a word), appends it, and repeats. Everything else — “reasoning,” “coding” — is an <i>emergent behaviour</i> of doing that prediction extremely well.</p>
+    <table>
+      <tr><th>Term</th><th>Plain meaning</th><th>In Lumey</th></tr>
+      <tr><td><b>Token</b></td><td>~¾ of a word; the unit models read/write</td><td>we <i>count</i> them to measure cost (M2.11)</td></tr>
+      <tr><td><b>Context window</b></td><td>the model’s short-term memory</td><td>the <code>ContextEngine</code> packs it carefully (M2.6)</td></tr>
+      <tr><td><b>Inference</b></td><td>one run of the model (prompt → output)</td><td>one <code>ModelClient.complete()</code> (M2.4)</td></tr>
+      <tr><td><b>Temperature</b></td><td>randomness dial (0 = deterministic)</td><td>a knob on the completion request</td></tr>
+    </table>
+    <div class="note key"><span class="ic">🔑</span>The crucial limit: an LLM is <b>frozen</b> (only knows training data), <b>stateless</b> (forgets between calls), and <b>can’t act</b> (only emits text). The next three concepts each fix one of those.</div>
+
+    <h2 id="agent"><span class="num">1.2</span>From a model to an <i>agent</i> — the loop<span class="pill cyan">M2.7</span></h2>
+    <div class="card cyan">
+      <p>A raw LLM answers once and stops. An <b>agent</b> places the LLM inside a <b>loop</b>: <b>think → act → observe → repeat</b>. In Lumey that’s the <code>LoopController</code> — each iteration is one model turn; if the model asks for a tool, we run it and feed the result back; when it stops asking for tools, it’s done. Safety rails (a step ceiling + token budget) mean it can never run away.</p>
+    </div>
+    <div class="mermaid">
+flowchart TD
+  S([Task]) --> A["🧠 Model: what next?"]
+  A -->|wants to act| T[🔧 Run the tool]
+  T --> O[👀 Observe result]
+  O --> A
+  A -->|done| R([Stop · request review])
+    </div>
+    <div class="note tip"><span class="ic">💡</span>Why “agent” and not “smart chatbot”? The <b>loop + tools</b>. A chatbot talks; an agent <i>does</i> — it changes files, runs tests, opens PRs.</div>
+
+    <h2 id="tools"><span class="num">1.3</span>Tools &amp; function calling — the agent’s <i>hands</i><span class="pill green">M2.5</span></h2>
+    <div class="card green">
+      <p>A model can’t touch your filesystem, so we give it <b>tools</b>: named functions with a typed schema (e.g. <code>write_file(path, content)</code>). When the model wants to act it emits a structured <b>tool call</b>; we execute it and return the result. In Lumey <b>every action is a tool</b> (<code>read_file</code>, <code>edit_file</code>, <code>grep</code>, <code>bash</code>, <code>run_tests</code>, <code>git_commit</code>, <code>open_pr</code>, <code>delegate</code>) — so each one is declared, validated (against a <code>zod</code> schema), guardable, and traced. Tool failures are <b>data</b> the model recovers from, not crashes.</p>
+    </div>
+    <div class="note lab"><span class="ic">🧪</span>We saw this live: a small 3B model <b>narrates</b> tool use in prose (“I’ll write the file…”) instead of emitting a real tool call. Stronger models call tools reliably. The loop is identical — the model’s competence differs, which is exactly why we kept the model swappable.</div>
+
+    <h2 id="rag"><span class="num">1.4</span>RAG — Retrieval-Augmented Generation (giving the model <i>knowledge</i>)<span class="pill amber">M2.16 · M2.19</span></h2>
+    <div class="card amber">
+      <p>The model is frozen and forgetful. <b>RAG</b> fixes that: before generating, you <b>retrieve</b> the relevant facts (past runs, docs, code) and <b>augment</b> the prompt with them, so the model answers grounded in <i>your</i> data.</p>
+    </div>
+    <div class="mermaid">
+flowchart LR
+  Q["Question / task"] --> R["🔎 Retrieve relevant facts"]
+  R --> P["📝 Augment the prompt"]
+  P --> G["🧠 Generate grounded answer"]
+  D[("past runs · docs · code")] --> R
+    </div>
+    <p><b>Two ways to “retrieve”:</b> <b>recency/keyword</b> (grab recent/matching rows — simple) and <b>semantic</b> (turn text into an <i>embedding</i> vector capturing <i>meaning</i>, then find the closest vectors by cosine similarity — finds relevant facts even when the words differ).</p>
+    <p><b>How Lumey does it:</b> cross-run <b>memory</b> (M2.16) records what each run learned and recalls it into the system prompt. <b>M2.19 made recall <i>semantic</i></b> — ranked by cosine similarity of <b>local embeddings</b> (<code>nomic-embed-text</code> via Ollama, 768-dim) to the task. Verified live:</p>
+    <div class="note key"><span class="ic">📈</span><b>“fix the login auth bug”</b> scored <b>0.70</b> vs <b>“resolve the sign-in failure”</b> (same meaning) but only <b>0.37</b> vs <b>“add a dashboard chart”</b> (unrelated). It retrieves by <i>meaning</i>, not keywords — and the embeddings are computed by a <b>local</b> model, never an online one.</div>
+    <div class="note tip"><span class="ic">🔑</span>RAG is <b>not</b> fine-tuning. Fine-tuning changes the model’s weights (expensive, slow). RAG changes the <i>prompt</i> (instant, per-request). For “know my codebase,” RAG almost always wins.</div>
+
+    <h2 id="context"><span class="num">1.5</span>Context engineering — where the <i>cost</i> is won<span class="pill blue">M2.6</span></h2>
+    <div class="card blue">
+      <p>The context window is finite and <b>you pay per token, every turn</b>. The <code>ContextEngine</code> owns three levers: <b>prefix-stable assembly</b> (keep the opening bytes identical so caches reuse them), <b>context editing</b> (clip a giant tool result), and <b>compaction</b> (summarize old turns when the budget is hit).</p>
+    </div>
+    <div class="note money"><span class="ic">💸</span>A dumb agent re-sends its whole history every turn → quadratic cost. A well-engineered context grows <i>linearly</i> and caches its prefix.</div>
+
+    <h2 id="guard"><span class="num">1.6</span>Guardrails &amp; sandboxing — <i>safety</i> by construction<span class="pill rose">M2.5</span></h2>
+    <div class="card rose">
+      <p><b>Sandbox:</b> the agent works in an isolated <b>git worktree</b>, every path forced <i>inside</i> the workspace (no <code>../../etc/passwd</code>), every command timed + output-capped + shell-free. <b>Guardrails:</b> a server-side gate on <code>bash</code> — a <b>denylist</b> (sudo, <code>rm -rf</code>, fork bombs, <code>curl … | sh</code>) that always wins, over an <b>allowlist</b> of binaries. This is <b>least privilege</b>: exactly the blast radius needed, no more.</p>
+    </div>
+
+    <h2 id="outcomes"><span class="num">1.7</span>Outcomes — the agent checks its own work<span class="pill purple">M2.17</span></h2>
+    <div class="card purple">
+      <p>A naïve agent declares “done” even when wrong. <b>Outcomes</b> adds self-grading: when the agent thinks it’s finished, it grades the result <b>against the acceptance criteria</b>; on a fail it <b>revises</b> — looping until it passes or a budget is spent.</p>
+    </div>
+    <div class="mermaid">
+flowchart LR
+  F["Agent: I'm done"] --> G{"Grade vs criteria"}
+  G -->|pass| R([Request review])
+  G -->|fail| V["Revise with feedback"]
+  V --> F
+    </div>
+    <div class="note lab"><span class="ic">🎬</span>We watched this happen live on a local model: self-grade <b>FAIL → revise → PASS → request review</b>, right in the trace — the agent catching its own incomplete work.</div>
+
+    <h2 id="multi"><span class="num">1.8</span>Multi-agent — <i>scale</i> through delegation<span class="pill green">M2.18</span></h2>
+    <div class="card green">
+      <p>For big or parallelizable work, a <b>lead</b> agent <b>delegates</b> a focused sub-objective to a <b>worker</b> — the <b>orchestrator-worker (hub-and-spoke)</b> pattern. <b>The make-or-break detail (from the research): context isolation.</b> Each worker gets its <i>own</i> clean context window — not a shared one — but the <b>same sandbox</b>, so workers coordinate through the <i>filesystem</i> (like engineers on a branch), never by polluting each other’s context.</p>
+    </div>
+
+    <h2 id="sdk"><span class="num">1.9</span>The SDK — the typed front door<span class="pill blue">M3.1 · M3.2</span></h2>
+    <div class="card blue">
+      <p>An <b>SDK</b> is the typed client other programs use to talk to the platform. Lumey’s is <b>schema-first</b>: the contract is declared once (as <code>zod</code> schemas), and <b>both</b> a TypeScript client <i>and</i> a generated Python client come from it — so they can’t drift. Typed errors, idempotent writes, resilient transport, and a <b>drift test</b> that fails CI if client and contract disagree.</p>
+    </div>
+    <div class="mermaid">
+flowchart TB
+  C["📜 ONE contract (zod + operations)"] --> TS["TypeScript client (validated)"]
+  C --> PY["Python client (generated)"]
+  TS --> API["Lumey API"]
+  PY --> API
+    </div>
+
+    <hr/>
+    <h2 id="build">Pass 2 — How <i>we</i> built it</h2>
+    <p>The whole runtime is built <b>in-house, from scratch, with no external agent SDK</b>, behind two stable <b>seams</b> (interfaces) that make everything swappable:</p>
+    <ul>
+      <li><b><code>RuntimeAdapter</code> seam</b> — the firewall between the platform and whatever <i>executes</i> a run (a <code>reference</code> simulator + our <code>native</code> loop). Swapping runtimes is “write an adapter,” never “rewrite the platform.”</li>
+      <li><b><code>ModelClient</code> seam</b> — the firewall between the runtime and the <i>model</i>. One HTTP client speaks the OpenAI-compatible wire format, pointed (by our hard rule) at <b>local models only</b>.</li>
+    </ul>
+    <table>
+      <tr><th>Part</th><th>Concept it embodies</th><th>Module</th></tr>
+      <tr><td>🧠 <b>ModelClient</b></td><td>inference</td><td><code>runtime/model/</code></td></tr>
+      <tr><td>🔧 <b>ToolRunner + Sandbox</b></td><td>tools + safety</td><td><code>runtime/tools/</code>, <code>runtime/sandbox/</code></td></tr>
+      <tr><td>📑 <b>ContextEngine</b></td><td>context + RAG</td><td><code>runtime/context/</code></td></tr>
+      <tr><td>♻️ <b>LoopController</b></td><td>the loop + Outcomes</td><td><code>runtime/loop/</code></td></tr>
+      <tr><td>🤝 <b>delegate tool</b></td><td>multi-agent</td><td><code>runtime/tools/delegate.ts</code></td></tr>
+    </table>
+
+    <hr/>
+    <h2 id="research">Pass 3 — Research &amp; decisions</h2>
+    <h3>Two honest modes</h3>
+    <p><b>1) Apply known patterns</b> for settled problems (retry client, git sandbox, schema-first codegen) — fast, low-risk. <b>2) Research first</b> for contested topics — we did this for <b>multi-agent</b>, reading the orchestration survey and the context-pollution finding (a flat shared context collapses steering accuracy ~60%→21% as workers scale), which is <i>why</i> our workers get isolated context. We tell you which mode each piece used.</p>
+    <h3>The big decisions</h3>
+    <table>
+      <tr><th>Decision</th><th>Why</th></tr>
+      <tr><td><b>Build the runtime in-house</b></td><td>own the loop = own the moat; no vendor can deprecate/reprice us</td></tr>
+      <tr><td><b>Behind a <code>RuntimeAdapter</code> seam</b></td><td><code>native</code> is just one more adapter — low-risk in-house build</td></tr>
+      <tr><td><b>Local models only</b></td><td>sovereign-AI / on-prem / air-gap is the product wedge</td></tr>
+      <tr><td><b>Everything is a tool</b></td><td>uniform audit / guardrail / trace for every action</td></tr>
+      <tr><td><b>Schema-first SDK</b></td><td>one contract → TS + Python, zero drift</td></tr>
+    </table>
+    <h3 id="moscow">MoSCoW — how we scope every milestone</h3>
+    <p>Every milestone is scoped <b>Must / Should / Could / Won’t</b> so we ship the right slice and never gold-plate. Each module doc carries a <code>Scope (MoSCoW)</code> block — it’s how a reviewer instantly sees what a change does <i>and does not</i> do.</p>
+
+    <hr/>
+    <h2 id="journey">Pass 4 — The journey (lessons)</h2>
+    <ul>
+      <li><b>Start lean.</b> We removed ~140 files &amp; 40+ DB models to strip to the agentic core before adding anything.</li>
+      <li><b>Green at every commit.</b> 1110 backend + 39 SDK tests, zero dead code, enforced continuously.</li>
+      <li><b>Seams pay off later.</b> Building the firewalls first meant lighting up a real local model was a one-line config change.</li>
+      <li><b>The live run taught the most.</b> We watched the Outcomes loop self-correct (FAIL→revise→PASS), learned that small models narrate tool use, and that a local 7B’s cold-load (~30–60s) needed a bigger timeout.</li>
+      <li><b>Document as you go.</b> Every module has a doc; the whole path lives in the CHANGELOG.</li>
+    </ul>
+  </main>
+
+  <footer>
+    Generated from <code>docs/learning/THE-LUMEY-LEARNING-GUIDE.md</code> · This guide grows with the product.
+    Deep dives: runtime &amp; SDK guides in <code>docs/architecture/</code> · full build log in <code>CHANGELOG.md</code>.
+  </footer>
+</div>
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+  mermaid.initialize({ startOnLoad:true, theme:"dark", themeVariables:{ fontSize:"14px", primaryColor:"#1f2547", primaryTextColor:"#e6e8f2", lineColor:"#64748b", primaryBorderColor:"#475569" }});
+</script>
+</body>
+</html>
