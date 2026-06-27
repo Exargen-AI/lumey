@@ -455,6 +455,7 @@ model ProjectDocument {
   // Most lookups filter by project + status (=READY), and order by
   // uploadedAt desc. The compound index covers the common path.
   @@index([projectId, status, uploadedAt(sort: Desc)])
+  @@index([uploadedById])
   @@map("project_documents")
 }
 
@@ -595,6 +596,8 @@ model Task {
   // the hot query on the product detail page kanban.
   @@index([productId])
   @@index([projectId, productId])
+  @@index([creatorId])
+  @@index([reviewRequestedById])
   @@map("tasks")
 }
 
@@ -671,6 +674,7 @@ model TaskLink {
   @@unique([fromTaskId, toTaskId, type])
   @@index([fromTaskId])
   @@index([toTaskId])
+  @@index([createdById])
   @@map("task_links")
 }
 
@@ -735,6 +739,7 @@ model TaskNudge {
   // Hot query: "has THIS user nudged THIS task in the last 24h?" —
   // the cooldown enforcement. Composite is the right shape.
   @@index([taskId, senderId, createdAt])
+  @@index([senderId])
   @@map("task_nudges")
 }
 
@@ -825,6 +830,7 @@ model Decision {
   createdBy User    @relation(fields: [createdById], references: [id])
 
   @@index([projectId])
+  @@index([createdById])
   @@map("decisions")
 }
 
@@ -873,6 +879,7 @@ model Deliverable {
   signedOffBy User?   @relation("DeliverableSignedOff", fields: [signedOffById], references: [id])
 
   @@index([projectId])
+  @@index([signedOffById])
   @@map("deliverables")
 }
 
@@ -917,6 +924,8 @@ model Comment {
   // The client task view pins the latest story update — query is
   // "comments on this task of kind story_update, newest first".
   @@index([taskId, kind])
+  @@index([authorId])
+  @@index([milestoneId])
   @@map("comments")
 }
 
@@ -932,6 +941,7 @@ model StatusUpdate {
   author  User    @relation(fields: [authorId], references: [id])
 
   @@index([projectId])
+  @@index([authorId])
   @@map("status_updates")
 }
 
@@ -1050,6 +1060,8 @@ model DailyUpdateTask {
   dailyUpdate DailyUpdate @relation(fields: [dailyUpdateId], references: [id], onDelete: Cascade)
   task        Task        @relation(fields: [taskId], references: [id])
 
+  @@index([dailyUpdateId])
+  @@index([taskId])
   @@map("daily_update_tasks")
 }
 
@@ -1110,6 +1122,7 @@ model RolePermission {
   permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
 
   @@unique([role, permissionId])
+  @@index([permissionId])
   @@map("role_permissions")
 }
 
