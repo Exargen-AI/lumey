@@ -49,6 +49,7 @@ import { commentsModule } from './modules/comments';
 import { notificationsModule } from './modules/notifications';
 import { agentRuntimeModule } from './modules/agent-runtime';
 import { failInterruptedRuns } from './modules/agent-runtime/runExecutor';
+import { warmLocalModel } from './modules/agent-runtime/runtime/model/warmup';
 
 const app = express();
 
@@ -290,6 +291,12 @@ async function bootstrap() {
   } catch (err) {
     logger.warn({ err }, 'interrupted-run reaper failed (non-fatal)');
   }
+
+  // Warm the local model in the background so the first agent run isn't cold.
+  // Fire-and-forget — never blocks the listener; no-op without a local model.
+  void warmLocalModel().then((warmed) => {
+    if (warmed) logger.info({ model: process.env.LUMEY_LOCAL_MODEL }, 'local model warmed');
+  });
 
   server = app.listen(env.PORT, () => {
     logger.info({ port: env.PORT, env: env.NODE_ENV }, 'server listening');
