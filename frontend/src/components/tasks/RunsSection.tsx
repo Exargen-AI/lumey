@@ -10,6 +10,7 @@ import {
   GitPullRequest,
   Terminal,
   Wrench,
+  Radio,
 } from 'lucide-react';
 import { Button } from '@/components/ui';
 import {
@@ -18,6 +19,7 @@ import {
   useStartTaskRun,
   useCancelTaskRun,
 } from '@/hooks/useAgentRuns';
+import { useRunStream } from '@/hooks/useRunStream';
 import type { RunStatus, AgentRunSummary } from '@/api/agentRuns';
 import { formatRelative } from '@/lib/formatters';
 import { cn } from '@/lib/cn';
@@ -69,6 +71,12 @@ function RunRow({
   const cancel = useCancelTaskRun(taskId);
   const active = !TERMINAL.includes(run.status);
 
+  // Live trace: while this run is open AND still active, stream its facts. The
+  // stream invalidates the queries above (so steps/status refetch live) and
+  // surfaces the newest status instantly for the pill.
+  const { connected, liveStatus } = useRunStream(taskId, run.id, { enabled: open && active });
+  const shownStatus = liveStatus ?? run.status;
+
   return (
     <div className="rounded-md border border-gray-200 dark:border-obsidian-border bg-white dark:bg-obsidian-raised">
       <button
@@ -76,7 +84,12 @@ function RunRow({
         className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-white/[0.02] rounded-md"
       >
         {open ? <ChevronDown size={13} className="text-gray-400" /> : <ChevronRight size={13} className="text-gray-400" />}
-        <StatusPill status={run.status} />
+        <StatusPill status={shownStatus} />
+        {open && connected && active && (
+          <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-500" title="Streaming live">
+            <Radio size={10} className="animate-pulse" /> live
+          </span>
+        )}
         <span className="ml-auto text-[11px] text-gray-400 dark:text-obsidian-muted">
           {formatRelative(run.createdAt)}
         </span>

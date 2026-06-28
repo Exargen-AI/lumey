@@ -115,7 +115,21 @@ TypeScript *and* generated Python, with a drift guard.
 - **Fix surfaced by the run:** local models default to a **300s** request
   deadline (a 7B cold-load alone is ~30–60s); env-override `LUMEY_MODEL_TIMEOUT_MS`.
 
+## Enterprise hardening — Phase 1 (Glass Cockpit)
+
+Plan: [`docs/planning/ENTERPRISE-PLAN.md`](docs/planning/ENTERPRISE-PLAN.md).
+
+- **P1.1 — SSE live run trace** ✅ — runs are no longer a polled black box. A
+  **single-use, ~30s, run-scoped stream ticket** (minted over the Bearer-authed
+  `POST …/stream-ticket`) authenticates a browser `EventSource` (which can't send
+  headers); `GET …/stream` forwards the run's `run.*` bus facts **signal-only**
+  (the client refetches the authoritative detail), with heartbeats + idempotent
+  teardown on disconnect/terminal/cap. Frontend `useRunStream` live-invalidates
+  the React Query caches + shows a "● live" pill; re-mints on reconnect (the
+  ticket is single-use). Verified live end-to-end (events streamed as they
+  happened; ticket replay → 401).
+
 ## Health (current)
 
-1110 backend tests + 39 SDK tests green · typecheck clean (backend + frontend +
+1124 backend tests + 39 SDK tests green · typecheck clean (backend + frontend +
 sdk) · zero dead exports · green at every commit.

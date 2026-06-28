@@ -66,3 +66,14 @@ export async function cancelTaskRun(taskId: string, runId: string): Promise<{ id
   const { data } = await api.post(`/tasks/${taskId}/runs/${runId}/cancel`, {});
   return data.data;
 }
+
+/**
+ * Mint a single-use ticket to open the live SSE trace. A browser `EventSource`
+ * can't send the Bearer header, so we authenticate here (via the axios client)
+ * and hand the resulting short-lived ticket to the stream URL. See the backend
+ * `runStream/` module.
+ */
+export async function requestRunStreamTicket(taskId: string, runId: string): Promise<{ ticket: string; expiresInMs: number }> {
+  const { data } = await api.post(`/tasks/${taskId}/runs/${runId}/stream-ticket`, {});
+  return data.data;
+}
