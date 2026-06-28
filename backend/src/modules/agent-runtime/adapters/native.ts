@@ -42,6 +42,7 @@ import { createInstallationTokenSource, type InstallationTokenSource } from '../
 import type { GitProvider } from '../runtime/git/gitProvider';
 import { logger } from '../../../lib/logger';
 import { linkPullRequestToTask } from '../../../services/taskPullRequestLink.service';
+import { recordRunCommit, recordRunPullRequest } from '../../../services/runSdlc.service';
 import { resolveRunRepoConfig } from '../../../services/runRepoConfig.service';
 import { recallMemories, recordMemory, projectIdForTask } from '../../../services/agentMemory.service';
 import { ensureRepoClone } from '../runtime/workspace/repoWorkspace';
@@ -171,13 +172,29 @@ async function defaultRunTools(ctx: RunContext, sandbox: Sandbox, model: ModelCl
     ...defaultTools(),
     askHumanTool, // HITL: the lead may ask a human and park (loop-intercepted)
     createRunTestsTool({ command: process.env.LUMEY_TEST_CMD }),
-    createGitCommitTool({ branch }),
+    createGitCommitTool({
+      branch,
+      // SDLC graph: record the commit on the run as it lands.
+      onCommitted: async (commit) => {
+        await recordRunCommit({ runId: ctx.runId, ...commit }).catch(() => undefined);
+      },
+    }),
     createOpenPrTool({
       provider,
       branch,
       base,
       onOpened: async (ref, input) => {
+        // Link the PR to the task (existing) AND record it on the run's SDLC graph.
         await linkPullRequestToTask(ctx.taskId, { externalId: ref.externalId, url: ref.url, title: input.title });
+        await recordRunPullRequest({
+          runId: ctx.runId,
+          externalId: ref.externalId,
+          number: ref.number,
+          url: ref.url,
+          title: input.title,
+          branch: ref.branch,
+          baseBranch: input.base,
+        }).catch(() => undefined);
       },
     }),
     createDelegateTool({ model, makeSubTools: () => new ToolRunner(defaultTools()) }),

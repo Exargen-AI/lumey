@@ -190,7 +190,27 @@ module guide: [`docs/modules/HUMAN-IN-THE-LOOP.md`](docs/modules/HUMAN-IN-THE-LO
   (real data: the date-library question + the `open_pr` approval, both
   actionable). First feature shown via the new local-demo loop.
 
+## Enterprise hardening — Phase 3 (SDLC graph)
+
+Module guide: [`docs/modules/SDLC-GRAPH.md`](docs/modules/SDLC-GRAPH.md).
+
+- **P3.1 — run → commits → PR → checks pipeline** ✅ — turns "a PR was opened"
+  into a living view of the agent's delivery from edit to merge, on the task card.
+  New `RunCommit` / `RunPullRequest` / `RunCheck` entities populated from two
+  sources: the agent's finalize tools as they fire (`git_commit` records a commit;
+  `open_pr` records the PR alongside the existing task link) and **GitHub
+  webhooks** — a new `check_run` branch attaches CI status to the run's PR (matched
+  by run branch, scoped to the project, idempotent on the check id), and the
+  `pull_request` webhook now also keeps the run PR's state current. All idempotent
+  so replays/retries never duplicate. `GET …/runs/:runId/sdlc` assembles the
+  chain; a polished **Delivery pipeline** strip on the run card renders
+  `commits → PR (state badge) → checks` with status colours (green pass / red
+  fail / amber running), each clickable to GitHub, live via the SSE invalidation.
+  Verified by service units (record/assemble + the `check_run` mapping & scoping)
+  + **live in the browser** (commits → PR #142 → 4 CI checks: 2 passed · 1 failed ·
+  1 running).
+
 ## Health (current)
 
-1182 backend tests + 39 SDK tests green · typecheck clean (backend + frontend +
+1191 backend tests + 39 SDK tests green · typecheck clean (backend + frontend +
 sdk) · zero dead exports · green at every commit.

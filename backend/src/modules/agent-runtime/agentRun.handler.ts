@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import * as service from '../../services/agentRun.service';
 import { listClarificationsForRun } from '../../services/runClarification.service';
 import { listApprovalsForRun } from '../../services/runApproval.service';
+import { getRunSdlc } from '../../services/runSdlc.service';
 import { startRun, cancelRun, pauseRun, resumeRun, answerClarification, decideApproval, resolveRunnerAgentId } from './runOrchestrator';
 import { NotFoundError, ValidationError } from '../../utils/errors';
 
@@ -147,6 +148,19 @@ export async function rejectRunApprovalHandler(req: Request, res: Response, next
     const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() || undefined : undefined;
     await decideApproval({ approvalId: req.params.approvalId, approved: false, reason, userId: req.user!.id });
     res.json({ success: true, data: { id: req.params.approvalId } });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// GET /api/v1/tasks/:id/runs/:runId/sdlc — the run's delivery chain: the commits
+// it made, the PR it opened, and that PR's CI checks (the pipeline strip).
+export async function getRunSdlcHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const run = await service.getRun(req.params.runId);
+    if (run.taskId !== req.params.id) throw new NotFoundError('Run');
+    const sdlc = await getRunSdlc(req.params.runId);
+    res.json({ success: true, data: sdlc });
   } catch (err) {
     next(err);
   }

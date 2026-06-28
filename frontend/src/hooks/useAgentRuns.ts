@@ -87,6 +87,14 @@ export function useRunApprovals(taskId: string, runId: string | null, opts: { en
   });
 }
 
+export function useRunSdlc(taskId: string, runId: string | null, opts: { enabled: boolean }) {
+  return useQuery({
+    queryKey: ['run-sdlc', taskId, runId],
+    queryFn: () => runApi.getRunSdlc(taskId, runId as string),
+    enabled: opts.enabled && !!taskId && !!runId,
+  });
+}
+
 export function useDecideRunApproval(taskId: string, runId: string) {
   const qc = useQueryClient();
   return useMutation({

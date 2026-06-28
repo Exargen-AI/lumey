@@ -152,6 +152,58 @@ export async function decideRunApproval(
   return data.data;
 }
 
+// ─── SDLC graph (commits → PR → checks) ───
+
+export type PrState = 'OPEN' | 'MERGED' | 'CLOSED';
+export type CheckStatus = 'QUEUED' | 'IN_PROGRESS' | 'COMPLETED';
+export type CheckConclusion =
+  | 'SUCCESS' | 'FAILURE' | 'NEUTRAL' | 'CANCELLED' | 'TIMED_OUT' | 'ACTION_REQUIRED' | 'SKIPPED' | 'STALE';
+
+export interface RunCommit {
+  id: string;
+  sha: string;
+  message: string;
+  branch: string;
+  committedAt: string;
+}
+
+export interface RunPullRequest {
+  id: string;
+  externalId: string;
+  number: number | null;
+  url: string;
+  title: string;
+  branch: string;
+  baseBranch: string;
+  state: PrState;
+  openedAt: string;
+  mergedAt: string | null;
+  closedAt: string | null;
+}
+
+export interface RunCheck {
+  id: string;
+  externalId: string;
+  name: string;
+  status: CheckStatus;
+  conclusion: CheckConclusion | null;
+  url: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+}
+
+export interface RunSdlc {
+  commits: RunCommit[];
+  pullRequest: RunPullRequest | null;
+  checks: RunCheck[];
+}
+
+/** The run's delivery chain: the commits it made, the PR it opened, its CI checks. */
+export async function getRunSdlc(taskId: string, runId: string): Promise<RunSdlc> {
+  const { data } = await api.get(`/tasks/${taskId}/runs/${runId}/sdlc`);
+  return data.data;
+}
+
 /**
  * Mint a single-use ticket to open the live SSE trace. A browser `EventSource`
  * can't send the Bearer header, so we authenticate here (via the axios client)

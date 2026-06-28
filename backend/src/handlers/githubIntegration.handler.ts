@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import * as service from '../services/githubIntegration.service';
+import { processCheckRunEvent, type GitHubCheckRunEvent } from '../services/runSdlc.service';
 
 // 64-byte hex placeholder used when no integration exists for the
 // requested projectId. Lets us run the HMAC compute on every request so
@@ -99,6 +100,12 @@ export async function webhookHandler(req: Request, res: Response, next: NextFunc
       // GitHub fires a `ping` immediately on webhook setup. Acknowledging it
       // lets the admin see the green checkmark in GitHub's webhook UI.
       res.json({ success: true, data: { pong: true } });
+      return;
+    }
+    if (event === 'check_run') {
+      // CI status for a run's PR — attach it to the SDLC pipeline (idempotent).
+      const check = await processCheckRunEvent(projectId, req.body as GitHubCheckRunEvent);
+      res.json({ success: true, data: check ? { checkId: check.id } : { ignored: 'no matching run PR' } });
       return;
     }
     if (event !== 'pull_request') {

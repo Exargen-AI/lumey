@@ -1260,6 +1260,8 @@ model AgentRun {
   events         RunEvent[]
   clarifications RunClarificationRequest[]
   approvals      RunApprovalRequest[]
+  commits        RunCommit[]
+  pullRequests   RunPullRequest[]
 
   @@index([taskId])
   @@index([agentId])
@@ -1378,4 +1380,96 @@ model RunApprovalRequest {
   @@index([runId])
   @@index([status])
   @@map("run_approval_requests")
+}
+
+// ─── SDLC graph (P3) ───
+// The chain of real software-delivery artifacts a run produces: commits → a pull
+// request → CI checks. Recorded as the agent's finalize tools fire and enriched
+// by GitHub webhooks (PR state, check_run), so the task card can show the agent's
+// work flow from edit to merge — not just "a PR was opened".
+
+enum PrState {
+  OPEN
+  MERGED
+  CLOSED
+}
+
+// Mirrors GitHub check_run.status / .conclusion. `conclusion` is null until the
+// check completes; on COMPLETED it holds the verdict.
+enum CheckStatus {
+  QUEUED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum CheckConclusion {
+  SUCCESS
+  FAILURE
+  NEUTRAL
+  CANCELLED
+  TIMED_OUT
+  ACTION_REQUIRED
+  SKIPPED
+  STALE
+}
+
+// A commit the agent made on its run branch.
+model RunCommit {
+  id          String   @id @default(uuid())
+  runId       String
+  sha         String
+  message     String   @db.Text
+  branch      String
+  committedAt DateTime @default(now())
+
+  run AgentRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  // One row per commit on a run — idempotent on replay.
+  @@unique([runId, sha])
+  @@index([runId])
+  @@map("run_commits")
+}
+
+// The pull request a run opened (push the run branch → open PR). State is kept
+// current by the `pull_request` webhook. `externalId` is the provider-stable id
+// (`owner/repo#number`), shared with TaskExternalLink.
+model RunPullRequest {
+  id         String    @id @default(uuid())
+  runId      String
+  externalId String    @unique
+  number     Int?
+  url        String
+  title      String    @db.Text
+  branch     String
+  baseBranch String
+  state      PrState   @default(OPEN)
+  openedAt   DateTime  @default(now())
+  mergedAt   DateTime?
+  closedAt   DateTime?
+
+  run    AgentRun   @relation(fields: [runId], references: [id], onDelete: Cascade)
+  checks RunCheck[]
+
+  @@index([runId])
+  @@index([branch])
+  @@map("run_pull_requests")
+}
+
+// A CI check on a run's PR (one GitHub check_run). Idempotent on `externalId` so
+// the webhook can replay/resync without duplicating.
+model RunCheck {
+  id               String           @id @default(uuid())
+  runPullRequestId String
+  externalId       String           @unique
+  name             String
+  status           CheckStatus      @default(QUEUED)
+  conclusion       CheckConclusion?
+  url              String?
+  startedAt        DateTime?
+  completedAt      DateTime?
+
+  pullRequest RunPullRequest @relation(fields: [runPullRequestId], references: [id], onDelete: Cascade)
+
+  @@index([runPullRequestId])
+  @@map("run_checks")
 }

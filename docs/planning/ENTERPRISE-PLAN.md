@@ -431,7 +431,7 @@ no model code changes needed for this backlog.
 ### Schema
 - [x] `RunStatus += PAUSED` + lifecycle edges (RUNNING↔PAUSED) in `runLifecycle.ts`. ✅ P1.2
 - [x] `RunClarificationRequest` + `RunApprovalRequest` models + `ClarificationStatus`/`ApprovalStatus` enums + migrations. ✅ P2.1/P2.2
-- [ ] `RunPullRequest`, `RunCheck`, `RunCommit`, `RunArtifact` models + migration.
+- [x] `RunPullRequest`, `RunCheck`, `RunCommit` models + `PrState`/`CheckStatus`/`CheckConclusion` enums + migration. ✅ P3.1 *(`RunArtifact` still to come.)*
 - [ ] `Activity.actorType` enum column + backfill default `HUMAN`.
 - [ ] `AgentPolicy`, `Budget`, `RunReceipt` models + migration (Phase-4 slice).
 
@@ -450,9 +450,9 @@ no model code changes needed for this backlog.
 - [x] `runApproval.service` + approval gate in the loop's per-call execution
       (default-gates `open_pr`, env `LUMEY_APPROVAL_TOOLS`) +
       `POST …/approvals/:id/(approve|reject)`. ✅ P2.2
-- [ ] Extend `githubIntegration.service.ts`: ingest `check_run` → `RunCheck`;
-      attach `pull_request` to `RunPullRequest`.
-- [ ] `GET /tasks/:id/runs/:runId/graph`; `GET /runs/:id/receipt`.
+- [x] Extend the GitHub webhook: ingest `check_run` → `RunCheck` (branch+project
+      scoped, idempotent); `pull_request` keeps `RunPullRequest.state` current. ✅ P3.1
+- [x] `GET /tasks/:id/runs/:runId/sdlc` (commits + PR + checks). ✅ P3.1 *(`/receipt` Phase 4.)*
 - [ ] `actorType` written by `activity.service` (resolve from `req.user.userType`).
 
 ### Runtime
@@ -462,8 +462,8 @@ no model code changes needed for this backlog.
 - [x] Approval gate in the loop's per-call execution (`runTools`): gated tools
       (default `open_pr`) park AWAITING_INPUT; approve runs, reject refuses +
       feeds the reason back. ✅ P2.2
-- [ ] Native adapter populates `RunCommit`/`RunPullRequest`/`RunArtifact` from
-      `git_commit`/`open_pr` results.
+- [x] Native adapter populates `RunCommit`/`RunPullRequest` from
+      `git_commit`/`open_pr` results (tool callbacks). ✅ P3.1 *(`RunArtifact` later.)*
 - [ ] Emit a `RunReceipt` on terminal in the native adapter.
 - [ ] (Phase-4) read allowed-tools + budget from `AgentPolicy` in the adapter;
       trip a circuit breaker on budget exceed.
@@ -475,7 +475,9 @@ no model code changes needed for this backlog.
       `RunsSection` (live). ✅ P2.1/P2.2
 - [x] `InboxPage` (`/agent-inbox`) — cross-task HITL inbox with inline answer +
       approve/reject + a sidebar entry. ✅ P2.3 *(SLA/escalation + count badge still to come.)*
-- [ ] Run PR/check **pipeline strip** on the task card.
+- [x] Run PR/check **pipeline strip** (`SdlcPipeline`) on the run card —
+      commits → PR (state badge) → checks (status colours), live. ✅ P3.1
+      *(on the task card itself still to come.)*
 - [ ] `AgentOpsPage` (admin) — runs list + filter/search + drill to live replay.
 - [ ] (Phase-4) `PolicyPage` skeleton.
 
@@ -487,7 +489,7 @@ no model code changes needed for this backlog.
 - [x] clarification round-trip + approval gate (ask/gate → park AWAITING_INPUT →
       answer/approve/reject → resume; reject refuses + feeds reason back;
       cancel-while-waiting → CANCELLED). ✅ P2.1/P2.2
-- [ ] `check_run` webhook → `RunCheck` attach; graph assembly; idempotent replay.
+- [x] `check_run` webhook → `RunCheck` attach; graph assembly; idempotent replay. ✅ P3.1
 - [ ] `actorType` recorded for agent vs human actions; RunReceipt completeness.
 
 ### Docs / DevEx

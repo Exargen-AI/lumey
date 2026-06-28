@@ -53,6 +53,8 @@ export function createRunTestsTool(opts: RunTestsOptions = {}): ToolDefinition<{
 export interface GitCommitOptions {
   /** The per-run branch to commit onto (created/moved if needed). */
   readonly branch: string;
+  /** Server-side hook to record the commit on the run's SDLC graph (DB write). */
+  readonly onCommitted?: (commit: { sha: string; message: string; branch: string }) => Promise<void>;
 }
 
 /** Stage all changes and commit them onto the run branch. */
@@ -74,6 +76,7 @@ export function createGitCommitTool(opts: GitCommitOptions): ToolDefinition<{ me
       }
       const head = await sandbox.exec('git', ['rev-parse', 'HEAD'], { signal });
       const sha = head.stdout.trim();
+      if (opts.onCommitted) await opts.onCommitted({ sha, message, branch: opts.branch });
       return { content: `Committed on ${opts.branch} (${sha.slice(0, 9)})`, data: { ok: true, branch: opts.branch, sha } };
     },
   };

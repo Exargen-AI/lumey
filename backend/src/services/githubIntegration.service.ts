@@ -1,8 +1,9 @@
 import crypto from 'crypto';
-import { TaskStatus, type Prisma } from '@prisma/client';
+import { PrState, TaskStatus, type Prisma } from '@prisma/client';
 import prisma from '../config/database';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../utils/errors';
 import { assertLegalTransition, enforceDoneGate } from './task.service';
+import { updateRunPullRequestState } from './runSdlc.service';
 import { logActivity } from './activity.service';
 import { logger } from '../lib/logger';
 
@@ -280,6 +281,22 @@ async function processPullRequestEventInner(projectId: string, event: GitHubPull
   const integration = await prisma.projectGitHubIntegration.findUnique({
     where: { projectId },
     select: { autoCloseOnMerge: true },
+  });
+
+  // Keep the run's SDLC-graph PR state current. A run PR is linked by its
+  // provider id (not by @-mentioning a task in the body), so do this BEFORE the
+  // task-ref early-return below — otherwise a run PR with no task ref would never
+  // reflect a merge/close on the pipeline strip. No-op if it isn't a run PR.
+  const runPrState = event.pull_request.merged
+    ? PrState.MERGED
+    : event.pull_request.state === 'closed'
+      ? PrState.CLOSED
+      : PrState.OPEN;
+  await updateRunPullRequestState({
+    externalId: `${event.repository.full_name}#${event.pull_request.number}`,
+    state: runPrState,
+    mergedAt: event.pull_request.merged_at ? new Date(event.pull_request.merged_at) : null,
+    closedAt: event.pull_request.closed_at ? new Date(event.pull_request.closed_at) : null,
   });
 
   const { references, closes } = extractTaskRefs(`${event.pull_request.title}\n\n${event.pull_request.body || ''}`);

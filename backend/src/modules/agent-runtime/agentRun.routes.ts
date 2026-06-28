@@ -10,6 +10,7 @@ const router = Router();
 // Read: run visibility, scoped under the task (taskAccess authorises).
 router.get('/tasks/:id/runs', authenticate, taskAccess, handler.listTaskRunsHandler);
 router.get('/tasks/:id/runs/:runId', authenticate, taskAccess, handler.getTaskRunHandler);
+router.get('/tasks/:id/runs/:runId/sdlc', authenticate, taskAccess, handler.getRunSdlcHandler);
 
 // Live trace (SSE). The ticket POST is Bearer-authenticated + taskAccess-gated;
 // the GET stream is authenticated by *consuming* that single-use ticket, since a
