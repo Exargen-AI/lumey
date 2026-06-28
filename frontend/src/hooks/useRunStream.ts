@@ -38,8 +38,10 @@ export function useRunStream(
       // refetch so the question/answer + approval UI track the live trace.
       void qc.invalidateQueries({ queryKey: ['run-clarifications', taskId, runId] });
       void qc.invalidateQueries({ queryKey: ['run-approvals', taskId, runId] });
-      // The delivery pipeline (commit/PR/checks) may have advanced too.
+      // The delivery pipeline (commit/PR/checks) may have advanced too, and a
+      // run that just came to rest now has a receipt.
       void qc.invalidateQueries({ queryKey: ['run-sdlc', taskId, runId] });
+      void qc.invalidateQueries({ queryKey: ['run-receipt', taskId, runId] });
     };
 
     const connect = async (): Promise<void> => {

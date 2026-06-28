@@ -210,7 +210,27 @@ Module guide: [`docs/modules/SDLC-GRAPH.md`](docs/modules/SDLC-GRAPH.md).
   + **live in the browser** (commits → PR #142 → 4 CI checks: 2 passed · 1 failed ·
   1 running).
 
+## Enterprise hardening — Phase 4 (Governance)
+
+Module guide: [`docs/modules/GOVERNANCE.md`](docs/modules/GOVERNANCE.md).
+
+- **P4.1 — RunReceipt** ✅ — the governance answer to "prove what this run
+  *actually* did". When a run comes to rest (AWAITING_REVIEW or terminal) a bus
+  subscriber issues a **tamper-evident receipt**: an immutable snapshot — identity,
+  outcome, timing, token usage, and the work it produced (steps + step-type
+  breakdown, commits, PR, checks passed/failed) — hashed into a `digest`
+  (**HMAC-SHA256** when `LUMEY_RECEIPT_SECRET` is set, SHA-256 otherwise) over a
+  canonical (key-sorted) serialization, so any later edit to the stored snapshot
+  is detectable. Upserted each rest, so a resume-then-rest refreshes it. Cost is
+  deliberately absent — the platform measures **tokens** (the honest, model-
+  agnostic unit; local-first). `GET …/runs/:runId/receipt` returns the receipt
+  with a recomputed-on-read **`verified`** flag. FE: a "Run receipt" certificate
+  panel on the run card (Verified/Tampered badge, key facts, copyable digest).
+  Verified by service units (snapshot assembly + **tamper detection**: edit the
+  content → `verified:false`) + **live in the browser** (Verified · sha256 ·
+  23,552 tokens · 4m 12s · 2 commits · PR #142 · checks 2✓ 1✗).
+
 ## Health (current)
 
-1191 backend tests + 39 SDK tests green · typecheck clean (backend + frontend +
+1195 backend tests + 39 SDK tests green · typecheck clean (backend + frontend +
 sdk) · zero dead exports · green at every commit.

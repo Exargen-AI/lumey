@@ -1262,6 +1262,7 @@ model AgentRun {
   approvals      RunApprovalRequest[]
   commits        RunCommit[]
   pullRequests   RunPullRequest[]
+  receipt        RunReceipt?
 
   @@index([taskId])
   @@index([agentId])
@@ -1453,6 +1454,25 @@ model RunPullRequest {
   @@index([runId])
   @@index([branch])
   @@map("run_pull_requests")
+}
+
+// A tamper-evident receipt of what a run did — issued when it reaches a rest
+// state (AWAITING_REVIEW or terminal) and refreshed if it resumes. `content` is
+// the immutable snapshot (model, tokens, steps, commits/PR/checks, outcome);
+// `digest` is an HMAC-SHA256 (when LUMEY_RECEIPT_SECRET is set) or SHA-256 over
+// the canonical content, so any later edit to the snapshot is detectable. This
+// is the governance answer to "prove what this run actually did".
+model RunReceipt {
+  id       String   @id @default(uuid())
+  runId    String   @unique
+  digest   String // hex digest over the canonical `content`
+  algo     String // "hmac-sha256" | "sha256"
+  content  Json // the snapshot (see runReceipt.service)
+  issuedAt DateTime @default(now())
+
+  run AgentRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@map("run_receipts")
 }
 
 // A CI check on a run's PR (one GitHub check_run). Idempotent on `externalId` so

@@ -433,7 +433,7 @@ no model code changes needed for this backlog.
 - [x] `RunClarificationRequest` + `RunApprovalRequest` models + `ClarificationStatus`/`ApprovalStatus` enums + migrations. ✅ P2.1/P2.2
 - [x] `RunPullRequest`, `RunCheck`, `RunCommit` models + `PrState`/`CheckStatus`/`CheckConclusion` enums + migration. ✅ P3.1 *(`RunArtifact` still to come.)*
 - [ ] `Activity.actorType` enum column + backfill default `HUMAN`.
-- [ ] `AgentPolicy`, `Budget`, `RunReceipt` models + migration (Phase-4 slice).
+- [x] `RunReceipt` model + migration. ✅ P4.1 *(`AgentPolicy`, `Budget` still to come.)*
 
 ### Backend
 - [x] Run **event hub** + `GET /tasks/:id/runs/:runId/stream` (SSE; single-use
@@ -452,7 +452,9 @@ no model code changes needed for this backlog.
       `POST …/approvals/:id/(approve|reject)`. ✅ P2.2
 - [x] Extend the GitHub webhook: ingest `check_run` → `RunCheck` (branch+project
       scoped, idempotent); `pull_request` keeps `RunPullRequest.state` current. ✅ P3.1
-- [x] `GET /tasks/:id/runs/:runId/sdlc` (commits + PR + checks). ✅ P3.1 *(`/receipt` Phase 4.)*
+- [x] `GET /tasks/:id/runs/:runId/sdlc` (commits + PR + checks). ✅ P3.1
+- [x] `GET /tasks/:id/runs/:runId/receipt` — tamper-evident run receipt
+      (digest-verified on read). ✅ P4.1
 - [ ] `actorType` written by `activity.service` (resolve from `req.user.userType`).
 
 ### Runtime
@@ -464,7 +466,8 @@ no model code changes needed for this backlog.
       feeds the reason back. ✅ P2.2
 - [x] Native adapter populates `RunCommit`/`RunPullRequest` from
       `git_commit`/`open_pr` results (tool callbacks). ✅ P3.1 *(`RunArtifact` later.)*
-- [ ] Emit a `RunReceipt` on terminal in the native adapter.
+- [x] Emit a `RunReceipt` when a run rests (bus subscriber on `run.transitioned`,
+      adapter-agnostic; HMAC/SHA-256 digest). ✅ P4.1
 - [ ] (Phase-4) read allowed-tools + budget from `AgentPolicy` in the adapter;
       trip a circuit breaker on budget exceed.
 
@@ -490,7 +493,8 @@ no model code changes needed for this backlog.
       answer/approve/reject → resume; reject refuses + feeds reason back;
       cancel-while-waiting → CANCELLED). ✅ P2.1/P2.2
 - [x] `check_run` webhook → `RunCheck` attach; graph assembly; idempotent replay. ✅ P3.1
-- [ ] `actorType` recorded for agent vs human actions; RunReceipt completeness.
+- [x] RunReceipt completeness + **tamper detection** (edit content → verified:false). ✅ P4.1
+      *(`actorType` recording still to come.)*
 
 ### Docs / DevEx
 - [ ] **Rewrite `README.md`** to the agentic Lumey story (it's stale — "Command

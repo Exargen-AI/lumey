@@ -3,6 +3,7 @@ import * as service from '../../services/agentRun.service';
 import { listClarificationsForRun } from '../../services/runClarification.service';
 import { listApprovalsForRun } from '../../services/runApproval.service';
 import { getRunSdlc } from '../../services/runSdlc.service';
+import { getRunReceipt } from '../../services/runReceipt.service';
 import { startRun, cancelRun, pauseRun, resumeRun, answerClarification, decideApproval, resolveRunnerAgentId } from './runOrchestrator';
 import { NotFoundError, ValidationError } from '../../utils/errors';
 
@@ -161,6 +162,19 @@ export async function getRunSdlcHandler(req: Request, res: Response, next: NextF
     if (run.taskId !== req.params.id) throw new NotFoundError('Run');
     const sdlc = await getRunSdlc(req.params.runId);
     res.json({ success: true, data: sdlc });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// GET /api/v1/tasks/:id/runs/:runId/receipt — the run's tamper-evident
+// governance record (null until the run first comes to rest).
+export async function getRunReceiptHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const run = await service.getRun(req.params.runId);
+    if (run.taskId !== req.params.id) throw new NotFoundError('Run');
+    const receipt = await getRunReceipt(req.params.runId);
+    res.json({ success: true, data: receipt });
   } catch (err) {
     next(err);
   }

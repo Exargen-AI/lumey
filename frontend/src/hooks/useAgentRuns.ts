@@ -95,6 +95,14 @@ export function useRunSdlc(taskId: string, runId: string | null, opts: { enabled
   });
 }
 
+export function useRunReceipt(taskId: string, runId: string | null, opts: { enabled: boolean }) {
+  return useQuery({
+    queryKey: ['run-receipt', taskId, runId],
+    queryFn: () => runApi.getRunReceipt(taskId, runId as string),
+    enabled: opts.enabled && !!taskId && !!runId,
+  });
+}
+
 export function useDecideRunApproval(taskId: string, runId: string) {
   const qc = useQueryClient();
   return useMutation({

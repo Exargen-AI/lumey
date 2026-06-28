@@ -32,6 +32,7 @@ import {
 } from '@/hooks/useAgentRuns';
 import { useRunStream } from '@/hooks/useRunStream';
 import { SdlcPipeline } from '@/components/tasks/SdlcPipeline';
+import { RunReceiptPanel } from '@/components/tasks/RunReceiptPanel';
 import type { RunStatus, AgentRunSummary } from '@/api/agentRuns';
 import { formatRelative } from '@/lib/formatters';
 import { cn } from '@/lib/cn';
@@ -243,6 +244,7 @@ function RunRow({
                 </p>
               )}
               <SdlcPipeline taskId={taskId} runId={run.id} enabled={open} />
+              <RunReceiptPanel taskId={taskId} runId={run.id} enabled={open} />
               {shownStatus === 'AWAITING_INPUT' && (
                 <>
                   <ClarificationPanel taskId={taskId} runId={run.id} />

@@ -204,6 +204,40 @@ export async function getRunSdlc(taskId: string, runId: string): Promise<RunSdlc
   return data.data;
 }
 
+// ─── Run receipt (governance) ───
+
+export interface RunReceiptContent {
+  version: number;
+  run: { id: string; taskId: string; agentId: string; model: string | null };
+  outcome: { status: RunStatus; summary: string | null };
+  timing: { startedAt: string | null; endedAt: string | null; durationMs: number | null };
+  usage: { inputTokens: number; outputTokens: number; totalTokens: number };
+  work: {
+    steps: number;
+    stepTypes: Record<string, number>;
+    commits: number;
+    pullRequest: { externalId: string; number: number | null; url: string; state: PrState } | null;
+    checks: { total: number; passed: number; failed: number };
+  };
+}
+
+export interface RunReceipt {
+  id: string;
+  runId: string;
+  digest: string;
+  algo: string;
+  issuedAt: string;
+  /** Recomputed-digest check — false means the stored snapshot was altered. */
+  verified: boolean;
+  content: RunReceiptContent;
+}
+
+/** The run's tamper-evident governance record, or null until it first rests. */
+export async function getRunReceipt(taskId: string, runId: string): Promise<RunReceipt | null> {
+  const { data } = await api.get(`/tasks/${taskId}/runs/${runId}/receipt`);
+  return data.data;
+}
+
 /**
  * Mint a single-use ticket to open the live SSE trace. A browser `EventSource`
  * can't send the Bearer header, so we authenticate here (via the axios client)
