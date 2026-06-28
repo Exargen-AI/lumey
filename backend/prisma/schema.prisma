@@ -204,6 +204,7 @@ model User {
   agentRuns               AgentRun[]                @relation("AgentRunAgent")
   answeredClarifications  RunClarificationRequest[] @relation("ClarificationAnsweredBy")
   decidedApprovals        RunApprovalRequest[]      @relation("ApprovalDecidedBy")
+  agentPolicy             AgentPolicy?              @relation("AgentPolicyOwner")
   uploadedDocuments       ProjectDocument[]         @relation("ProjectDocumentUploader")
   taskSubscriptions       TaskSubscription[]
   sentNudges              TaskNudge[]               @relation("TaskNudgeSender")
@@ -1381,6 +1382,30 @@ model RunApprovalRequest {
   @@index([runId])
   @@index([status])
   @@map("run_approval_requests")
+}
+
+// Per-agent governance policy (P4). The receipt proves what a run *did*; this
+// controls what an agent is *allowed* to do — least privilege + a budget circuit
+// breaker. Absent ⇒ unrestricted (backward-compatible). One row per agent User.
+//   - enabled=false is a kill-switch: the agent can't start runs.
+//   - allowedTools (string[] | null): if set, the agent may ONLY use these tools;
+//     anything else is filtered from its toolset and refused if called anyway.
+//   - maxRunTokens / maxRunSteps: per-run ceilings (the circuit breaker).
+//   - model: a preferred model id (stored now; Fleet routing consumes it in P5).
+model AgentPolicy {
+  id           String   @id @default(uuid())
+  userId       String   @unique // the agent User this governs
+  enabled      Boolean  @default(true)
+  allowedTools Json? // string[] allowlist, or null for "all tools"
+  maxRunTokens Int?
+  maxRunSteps  Int?
+  model        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation("AgentPolicyOwner", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("agent_policies")
 }
 
 // ─── SDLC graph (P3) ───

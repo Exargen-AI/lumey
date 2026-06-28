@@ -2,6 +2,29 @@ import type { Request, Response, NextFunction } from 'express';
 import * as service from '../services/agent.service';
 import { getKnowledgePackForAgent } from '../services/agentKnowledgePack.service';
 import { getNextTaskForAgent } from '../services/agentNextTask.service';
+import { resolveEffectivePolicy, upsertAgentPolicy } from '../services/agentPolicy.service';
+
+// GET /api/v1/agents/:id/policy — the agent's effective governance policy
+// (kill-switch, tool allowlist, per-run ceilings, model). Always fully defaulted.
+export async function getAgentPolicyHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const policy = await resolveEffectivePolicy(req.params.id);
+    res.json({ success: true, data: policy });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// PUT /api/v1/agents/:id/policy — set the agent's policy (admin). Body accepts any
+// of: enabled, allowedTools (string[]|null), maxRunTokens, maxRunSteps, model.
+export async function updateAgentPolicyHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const policy = await upsertAgentPolicy(req.params.id, req.body ?? {});
+    res.json({ success: true, data: policy });
+  } catch (err) {
+    next(err);
+  }
+}
 
 // POST /api/v1/agents/me/budget-increment
 // Body: { usdCents: number }

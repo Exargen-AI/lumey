@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import * as runApi from '@/api/agentRuns';
+import { getAgentPolicy } from '@/api/agentPolicy';
 
 export function useTaskRuns(taskId: string) {
   return useQuery({
@@ -100,6 +101,15 @@ export function useRunReceipt(taskId: string, runId: string | null, opts: { enab
     queryKey: ['run-receipt', taskId, runId],
     queryFn: () => runApi.getRunReceipt(taskId, runId as string),
     enabled: opts.enabled && !!taskId && !!runId,
+  });
+}
+
+export function useAgentPolicy(agentId: string | null, opts: { enabled: boolean }) {
+  return useQuery({
+    queryKey: ['agent-policy', agentId],
+    queryFn: () => getAgentPolicy(agentId as string),
+    enabled: opts.enabled && !!agentId,
+    staleTime: 60_000,
   });
 }
 

@@ -82,6 +82,12 @@ describe('startRun', () => {
     expect(createRunSpy).not.toHaveBeenCalled();
   });
 
+  it('refuses to start a run for an agent disabled by policy (kill-switch)', async () => {
+    prismaMock.agentPolicy.findUnique.mockResolvedValue({ enabled: false } as never);
+    await expect(startRun({ taskId: 't1', agentId: 'a1' })).rejects.toBeInstanceOf(ValidationError);
+    expect(createRunSpy).not.toHaveBeenCalled();
+  });
+
   it('throws NotFoundError for a missing task', async () => {
     prismaMock.task.findUnique.mockResolvedValue(null as never);
     await expect(startRun({ taskId: 'nope', agentId: 'a1' })).rejects.toBeInstanceOf(NotFoundError);

@@ -10,6 +10,7 @@ import { NotFoundError, ValidationError } from '../../utils/errors';
 import { createRun, transitionRun } from '../../services/agentRun.service';
 import { recordClarificationAnswer } from '../../services/runClarification.service';
 import { recordApprovalDecision } from '../../services/runApproval.service';
+import { resolveEffectivePolicy } from '../../services/agentPolicy.service';
 import { isTerminal } from '../../lib/runLifecycle';
 import { getAdapter, DEFAULT_ADAPTER_ID } from './adapterRegistry';
 import { dispatchRun, isRunInflight } from './runExecutor';
@@ -34,6 +35,12 @@ export async function startRun(input: {
   if (!agent) throw new NotFoundError('Agent');
   if (agent.userType !== UserType.AGENT) {
     throw new ValidationError('Runs can only be started for agent users');
+  }
+
+  // Governance kill-switch: a disabled agent may not start runs.
+  const policy = await resolveEffectivePolicy(input.agentId);
+  if (!policy.enabled) {
+    throw new ValidationError('This agent is disabled by its policy and cannot start runs.');
   }
 
   // Resolve the runtime up front so an unknown adapter fails before we create a

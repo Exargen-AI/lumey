@@ -65,9 +65,31 @@ stored `content` and confirm `verified` flips to `false`. Verified live in the
 browser against a fixture (Verified · sha256 · 23,552 tokens · 4m 12s · 2 commits
 · PR #142 · checks 2✓ 1✗). No live LLM needed.
 
+## P4.2 — AgentPolicy + Budget + circuit breaker
+
+The receipt's mirror image: it records what a run *did*; the policy governs what
+an agent is *allowed* to do. `AgentPolicy` is per-agent (one row per agent User);
+**absent ⇒ unrestricted**, so existing agents are unaffected.
+
+- **Kill-switch** (`enabled=false`) — `startRun` refuses to dispatch a disabled
+  agent.
+- **Tool allowlist** (`allowedTools`) — least privilege, enforced twice: the
+  native adapter **filters the advertised toolset** to the allowlist (so a denied
+  tool isn't even offered to the model), and the `LoopController` **refuses any
+  denied call** with an `ok:false` result + a "Blocked by policy: x" trace entry
+  (defence in depth, in case a model hallucinates a tool name).
+- **Per-run ceilings** (`maxRunTokens` / `maxRunSteps`) — the circuit breaker:
+  resolved into the loop budget, falling back to the adapter default.
+- **`model`** — a preferred model id, stored now; Fleet routing (P5) consumes it.
+
+`resolveEffectivePolicy(agentId)` is the single, fully-defaulted read used by the
+start gate, the adapter, and the API. `GET /api/v1/agents/:id/policy` (read,
+`user.view`) returns the effective policy; `PUT` (admin, `user.edit`) sets it.
+FE: a "Governed by policy" panel on the run card.
+
 ## Not yet built (Phase 4 remainder)
 
-`AgentPolicy` (per-agent allowed tools / model / budget, enforced in the adapter),
-`Budget` + a circuit breaker that trips on overspend, and `Activity.actorType`
-(agent vs human, so the activity feed can attribute actions). Receipt **signing
-with a rotating key** + an external attestation log are the durable-trust follow-ups.
+`Activity.actorType` (agent vs human, so the activity feed attributes actions); a
+standalone cumulative `Budget` model with windows (today the ceiling is per-run);
+and receipt **signing with a rotating key** + an external attestation log for
+durable trust.

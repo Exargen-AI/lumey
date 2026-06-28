@@ -43,6 +43,7 @@ import type { GitProvider } from '../runtime/git/gitProvider';
 import { logger } from '../../../lib/logger';
 import { linkPullRequestToTask } from '../../../services/taskPullRequestLink.service';
 import { recordRunCommit, recordRunPullRequest } from '../../../services/runSdlc.service';
+import { resolveEffectivePolicy } from '../../../services/agentPolicy.service';
 import { resolveRunRepoConfig } from '../../../services/runRepoConfig.service';
 import { recallMemories, recordMemory, projectIdForTask } from '../../../services/agentMemory.service';
 import { ensureRepoClone } from '../runtime/workspace/repoWorkspace';
@@ -165,10 +166,10 @@ async function resolveGitProviderAndBase(ctx: RunContext, sandbox: Sandbox): Pro
  * `delegate` (multi-agent — hub-and-spoke). Workers get only the coding tools
  * (no finalize, no `delegate`), so they can't open PRs or recurse.
  */
-async function defaultRunTools(ctx: RunContext, sandbox: Sandbox, model: ModelClient): Promise<ToolRunner> {
+async function defaultRunTools(ctx: RunContext, sandbox: Sandbox, model: ModelClient, allowedTools: string[] | null): Promise<ToolRunner> {
   const branch = `lumey/run-${ctx.runId}`;
   const { provider, base } = await resolveGitProviderAndBase(ctx, sandbox);
-  return new ToolRunner([
+  const tools = [
     ...defaultTools(),
     askHumanTool, // HITL: the lead may ask a human and park (loop-intercepted)
     createRunTestsTool({ command: process.env.LUMEY_TEST_CMD }),
@@ -198,7 +199,10 @@ async function defaultRunTools(ctx: RunContext, sandbox: Sandbox, model: ModelCl
       },
     }),
     createDelegateTool({ model, makeSubTools: () => new ToolRunner(defaultTools()) }),
-  ]);
+  ];
+  // Policy: least privilege — when an allowlist is set, the agent's lead toolset
+  // is filtered to it (so a denied tool isn't even advertised to the model).
+  return new ToolRunner(allowedTools ? tools.filter((t) => allowedTools.includes(t.name)) : tools);
 }
 
 /** Lazily build the local embedding client from env (once); null if unconfigured. */
@@ -334,8 +338,10 @@ export function createNativeAdapter(deps: NativeAdapterDeps): RuntimeAdapter {
       try {
         const model = deps.modelFactory(); // throws if no model configured
         const projectId = await projectIdForTask(ctx.taskId);
+        // Governance: the agent's effective policy gates its toolset + budget.
+        const policy = await resolveEffectivePolicy(ctx.agentId);
         sandbox = await (deps.sandboxFactory ?? repoAwareSandbox)(ctx);
-        const tools = deps.toolsFactory ? deps.toolsFactory() : await defaultRunTools(ctx, sandbox, model);
+        const tools = deps.toolsFactory ? deps.toolsFactory() : await defaultRunTools(ctx, sandbox, model, policy.allowedTools);
         const queryText = [ctx.task.title, ctx.task.description ?? ''].join('\n').trim();
         const preamble = projectId ? await memoryPreamble(projectId, queryText) : [];
         const context = new ContextEngine(buildSystemPrompt(ctx, tools.list()), { summarize: modelSummarizer(model), preamble });
@@ -345,8 +351,17 @@ export function createNativeAdapter(deps: NativeAdapterDeps): RuntimeAdapter {
           context,
           sandbox,
           recorder: serviceRecorder(ctx.runId),
-          budget: deps.budget,
+          // Per-run ceilings (the circuit breaker) come from policy, falling back
+          // to the adapter default.
+          budget: {
+            maxSteps: policy.maxRunSteps ?? deps.budget?.maxSteps,
+            maxTokens: policy.maxRunTokens ?? deps.budget?.maxTokens,
+          },
           signal: controller.signal,
+          // Policy tool gate (defence-in-depth alongside the filtered toolset).
+          isToolAllowed: policy.allowedTools
+            ? (name) => policy.allowedTools!.includes(name)
+            : undefined,
           pause, // honour human suspend/resume at turn boundaries
           // HITL: persist the question, then park on the in-memory gate until a
           // human answers (or the run is cancelled, which resolves null).

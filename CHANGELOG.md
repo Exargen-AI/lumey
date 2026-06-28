@@ -230,7 +230,22 @@ Module guide: [`docs/modules/GOVERNANCE.md`](docs/modules/GOVERNANCE.md).
   content → `verified:false`) + **live in the browser** (Verified · sha256 ·
   23,552 tokens · 4m 12s · 2 commits · PR #142 · checks 2✓ 1✗).
 
+- **P4.2 — AgentPolicy + Budget + circuit breaker** ✅ — the receipt's mirror
+  image: it proves what a run *did*; the policy controls what an agent is
+  *allowed* to do. A per-agent `AgentPolicy` carries a **kill-switch** (a disabled
+  agent can't start runs — enforced in `startRun`), a **tool allowlist** (least
+  privilege: the native adapter filters the advertised toolset to it, and the
+  loop refuses any denied call with an unmistakable "Blocked by policy: x" trace
+  entry — defence in depth), and **per-run token/step ceilings** (the circuit
+  breaker, fed into the loop budget). Absent ⇒ unrestricted (backward-compatible).
+  `GET/PUT /agents/:id/policy` (read = `user.view`, write = `user.edit`). FE: a
+  "Governed by policy" panel on the run card (tool count + caps + model chips,
+  allowlist), and the blocked-tool step renders in the live trace. Verified by
+  service units (defaults/mapping/validation) + loop units (denied tool → blocked
+  step, allowed tool runs) + orchestrator unit (kill-switch) + **live in the
+  browser** (bash blocked; 9 tools · 60k token cap · 18 step cap).
+
 ## Health (current)
 
-1195 backend tests + 39 SDK tests green · typecheck clean (backend + frontend +
+1204 backend tests + 39 SDK tests green · typecheck clean (backend + frontend +
 sdk) · zero dead exports · green at every commit.

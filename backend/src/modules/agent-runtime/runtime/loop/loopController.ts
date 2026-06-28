@@ -95,6 +95,13 @@ export interface LoopDeps {
    * feeds the reason back to the agent.
    */
   readonly approve?: (request: { action: string; summary: string; detail?: string }, signal?: AbortSignal) => Promise<ApprovalDecision | null>;
+  /**
+   * Per-agent policy gate: return false for a tool the agent is not allowed to
+   * use. A denied call is refused with an `ok:false` result the agent reads (it
+   * never reaches the sandbox). Defence-in-depth — the adapter also filters the
+   * advertised toolset, so a well-behaved model won't call a denied tool.
+   */
+  readonly isToolAllowed?: (toolName: string) => boolean;
   /** When set, grade the final result and revise on failure (Outcomes). */
   readonly grader?: Grader;
   /** Max grade→revise cycles before handing off to a human. Default 2. */
@@ -110,6 +117,8 @@ export interface LoopOutcome {
 
 const DEFAULT_BUDGET = { maxSteps: 20, maxTokens: 200_000 } as const;
 const DEFAULT_MAX_REVISIONS = 2;
+/** Sentinel prefix on a policy-denied tool result, so the trace can label it clearly. */
+const POLICY_BLOCK_PREFIX = 'Blocked by agent policy:';
 
 /** Map a tool name to the run-step type that best describes it on the trace. */
 function stepTypeForTool(name: string, args: string): RunStepType {
@@ -301,6 +310,17 @@ export class LoopController {
     const ctx = { sandbox: this.d.sandbox, signal: this.d.signal };
     const results: ToolResult[] = [];
     for (const call of calls) {
+      // Policy gate first — a denied tool never runs and never needs approval.
+      if (this.d.isToolAllowed && !this.d.isToolAllowed(call.name)) {
+        results.push({
+          callId: call.id,
+          name: call.name,
+          ok: false,
+          content: `${POLICY_BLOCK_PREFIX} "${call.name}" is not in this agent's allowed tools. Use a permitted tool or stop and request review.`,
+          durationMs: 0,
+        });
+        continue;
+      }
       if (this.d.approve && this.d.requiresApproval?.(call.name)) {
         const decision = await this.handleApproval(call);
         if (decision === null) return this.finishCancelled(turns, usage); // cancelled while waiting
@@ -348,9 +368,11 @@ export class LoopController {
     for (let i = 0; i < results.length; i++) {
       const call = calls[i];
       const r = results[i];
+      // A policy-denied call gets an unmistakable trace label, not "x (failed)".
+      const blocked = !r.ok && r.content.startsWith(POLICY_BLOCK_PREFIX);
       await this.d.recorder.step({
         type: stepTypeForTool(call.name, call.arguments),
-        title: `${call.name}${r.ok ? '' : ' (failed)'}`,
+        title: blocked ? `Blocked by policy: ${call.name}` : `${call.name}${r.ok ? '' : ' (failed)'}`,
         detail: firstLine(r.content, 200),
       });
     }

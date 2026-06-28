@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { authenticate } from '../middleware/authenticate';
+import { authorize } from '../middleware/authorize';
 import * as handler from '../handlers/agent.handler';
 
 const router = Router();
@@ -20,5 +21,10 @@ router.get('/agents/me/knowledge-pack/:projectSlug', authenticate, handler.knowl
 // the single highest-priority, unblocked, assigned task. Agent-only;
 // see agentNextTask.service for the full selection contract.
 router.get('/agents/me/next-task', authenticate, handler.nextTaskHandler);
+
+// Governance policy for a specific agent. Read needs user.view; write (admin)
+// needs user.edit — agents are managed like users.
+router.get('/agents/:id/policy', authenticate, authorize('user.view'), handler.getAgentPolicyHandler);
+router.put('/agents/:id/policy', authenticate, authorize('user.edit'), handler.updateAgentPolicyHandler);
 
 export default router;

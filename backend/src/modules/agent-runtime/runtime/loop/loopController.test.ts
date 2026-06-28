@@ -510,3 +510,38 @@ describe('LoopController approval gate', () => {
     expect(recorder.transitions.map((t) => t.to)).toEqual([RunStatus.RUNNING, RunStatus.AWAITING_REVIEW]);
   });
 });
+
+// ── policy gate (a disallowed tool is refused, never reaches the sandbox) ──────
+
+describe('LoopController policy gate', () => {
+  it('refuses a disallowed tool with a "Blocked by policy" step and keeps going', async () => {
+    const model = new ScriptedModel([
+      callTool('w1', 'write_file', '{"path":"out.txt","content":"x"}'),
+      say('Understood; cannot write. Stopping for review.'),
+    ]);
+    const recorder = new FakeRecorder();
+    const outcome = await new LoopController({
+      model, tools, context: engine(), sandbox, recorder,
+      isToolAllowed: (name) => name === 'read_file', // write_file is denied
+    }).run();
+
+    await expect(sandbox.readFile('out.txt')).rejects.toThrow(); // never written
+    expect(recorder.steps.some((s) => s.title === 'Blocked by policy: write_file')).toBe(true);
+    expect(outcome.status).toBe(RunStatus.AWAITING_REVIEW);
+  });
+
+  it('runs an allowed tool normally', async () => {
+    await sandbox.writeFile('README.md', 'hi');
+    const model = new ScriptedModel([
+      callTool('r1', 'read_file', '{"path":"README.md"}'),
+      say('done'),
+    ]);
+    const recorder = new FakeRecorder();
+    await new LoopController({
+      model, tools, context: engine(), sandbox, recorder,
+      isToolAllowed: (name) => name === 'read_file',
+    }).run();
+    expect(recorder.steps.some((s) => s.title === 'read_file')).toBe(true);
+    expect(recorder.steps.some((s) => s.title.startsWith('Blocked by policy'))).toBe(false);
+  });
+});

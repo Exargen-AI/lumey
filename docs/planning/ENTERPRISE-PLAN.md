@@ -433,7 +433,9 @@ no model code changes needed for this backlog.
 - [x] `RunClarificationRequest` + `RunApprovalRequest` models + `ClarificationStatus`/`ApprovalStatus` enums + migrations. ✅ P2.1/P2.2
 - [x] `RunPullRequest`, `RunCheck`, `RunCommit` models + `PrState`/`CheckStatus`/`CheckConclusion` enums + migration. ✅ P3.1 *(`RunArtifact` still to come.)*
 - [ ] `Activity.actorType` enum column + backfill default `HUMAN`.
-- [x] `RunReceipt` model + migration. ✅ P4.1 *(`AgentPolicy`, `Budget` still to come.)*
+- [x] `RunReceipt` model + migration. ✅ P4.1
+- [x] `AgentPolicy` model + migration (allowlist + token/step caps + kill-switch
+      + model). ✅ P4.2 *(standalone cumulative `Budget` model still to come.)*
 
 ### Backend
 - [x] Run **event hub** + `GET /tasks/:id/runs/:runId/stream` (SSE; single-use
@@ -468,8 +470,9 @@ no model code changes needed for this backlog.
       `git_commit`/`open_pr` results (tool callbacks). ✅ P3.1 *(`RunArtifact` later.)*
 - [x] Emit a `RunReceipt` when a run rests (bus subscriber on `run.transitioned`,
       adapter-agnostic; HMAC/SHA-256 digest). ✅ P4.1
-- [ ] (Phase-4) read allowed-tools + budget from `AgentPolicy` in the adapter;
-      trip a circuit breaker on budget exceed.
+- [x] Native adapter reads allowed-tools + budget from `AgentPolicy` (filters the
+      toolset, feeds the loop budget); the loop refuses denied calls and the
+      token ceiling is the circuit breaker; kill-switch in `startRun`. ✅ P4.2
 
 ### Frontend
 - [x] `RunsSection` → `EventSource` live trace (✅ P1.1) + Pause/Resume/Cancel
@@ -482,7 +485,8 @@ no model code changes needed for this backlog.
       commits → PR (state badge) → checks (status colours), live. ✅ P3.1
       *(on the task card itself still to come.)*
 - [ ] `AgentOpsPage` (admin) — runs list + filter/search + drill to live replay.
-- [ ] (Phase-4) `PolicyPage` skeleton.
+- [x] "Governed by policy" panel on the run card (`RunPolicyPanel`). ✅ P4.2
+      *(a full admin `PolicyPage` editor still to come.)*
 
 ### Tests
 - [x] SSE auth/gating (single-use ticket: mint/consume/replay→401, run-scoping,
