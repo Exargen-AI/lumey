@@ -23,11 +23,13 @@ import prisma from '../../../config/database';
 import { appendStep, transitionRun, recordUsage } from '../../../services/agentRun.service';
 import { isTerminal } from '../../../lib/runLifecycle';
 import type { RuntimeAdapter, RunContext } from '../runtimeAdapter';
-import { LoopController, type LoopBudget, type RunRecorder, type Grader } from '../runtime/loop/loopController';
+import { LoopController, type LoopBudget, type RunRecorder, type Grader, type ApprovalDecision } from '../runtime/loop/loopController';
 import { PauseController } from '../runtime/loop/pauseController';
 import { ClarificationController } from '../runtime/loop/clarificationController';
+import { Rendezvous } from '../runtime/loop/rendezvous';
 import { askHumanTool } from '../runtime/tools/askHuman';
 import { createClarification, cancelOpenClarificationsForRun } from '../../../services/runClarification.service';
+import { createApproval, cancelOpenApprovalsForRun } from '../../../services/runApproval.service';
 import { ContextEngine } from '../runtime/context/contextEngine';
 import { buildSystemPrompt } from '../runtime/context/systemPrompt';
 import { ToolRunner } from '../runtime/tools/toolRunner';
@@ -266,6 +268,18 @@ function modelSummarizer(model: ModelClient): (older: ChatMessage[]) => Promise<
   };
 }
 
+/**
+ * Which tool calls require human approval before they run, from
+ * `LUMEY_APPROVAL_TOOLS` (comma-separated). Defaults to `open_pr` — a PR is an
+ * outward action, so "human stays in control" is the safe default. Set the env
+ * to a different list, or to an empty string to disable the gate entirely.
+ */
+function approvalRequiredTools(): ReadonlySet<string> {
+  const raw = process.env.LUMEY_APPROVAL_TOOLS;
+  if (raw === undefined) return new Set(['open_pr']);
+  return new Set(raw.split(',').map((t) => t.trim()).filter(Boolean));
+}
+
 export function createNativeAdapter(deps: NativeAdapterDeps): RuntimeAdapter {
   const inflight = new Map<string, AbortController>();
   // One pause handle per in-flight run, parallel to its AbortController. pause()
@@ -275,6 +289,10 @@ export function createNativeAdapter(deps: NativeAdapterDeps): RuntimeAdapter {
   // One clarification rendezvous per in-flight run — the channel a human's
   // answer travels to reach the parked loop.
   const clarifyGates = new Map<string, ClarificationController>();
+  // One approval rendezvous per in-flight run — the channel a human's decision
+  // travels to reach a loop parked on a gated action.
+  const approvalGates = new Map<string, Rendezvous<ApprovalDecision>>();
+  const approvalTools = approvalRequiredTools();
 
   return {
     id: 'native',
@@ -293,6 +311,8 @@ export function createNativeAdapter(deps: NativeAdapterDeps): RuntimeAdapter {
       pauses.set(ctx.runId, pause);
       const clarifyGate = new ClarificationController();
       clarifyGates.set(ctx.runId, clarifyGate);
+      const approvalGate = new Rendezvous<ApprovalDecision>();
+      approvalGates.set(ctx.runId, approvalGate);
       let sandbox: Sandbox | undefined;
       try {
         const model = deps.modelFactory(); // throws if no model configured
@@ -317,6 +337,12 @@ export function createNativeAdapter(deps: NativeAdapterDeps): RuntimeAdapter {
             await createClarification({ runId: ctx.runId, taskId: ctx.taskId, question });
             return clarifyGate.wait(signal);
           },
+          // HITL approval gate: hold any high-risk tool call for a human OK.
+          requiresApproval: (tool) => approvalTools.has(tool),
+          approve: async (request, signal) => {
+            await createApproval({ runId: ctx.runId, taskId: ctx.taskId, action: request.action, summary: request.summary, detail: request.detail });
+            return approvalGate.wait(signal);
+          },
 
           // Outcomes: grade the result vs acceptance criteria and revise on fail.
           grader: hasAcceptanceCriteria(ctx.task.acceptanceCriteria) ? modelGrader(model, ctx) : undefined,
@@ -333,9 +359,12 @@ export function createNativeAdapter(deps: NativeAdapterDeps): RuntimeAdapter {
         inflight.delete(ctx.runId);
         pauses.delete(ctx.runId);
         clarifyGates.delete(ctx.runId);
-        // Close any question still open when the run stops (e.g. cancelled while
-        // waiting) so the trace/inbox never shows a live question on a dead run.
+        approvalGates.delete(ctx.runId);
+        // Close any question/approval still open when the run stops (e.g.
+        // cancelled while waiting) so the trace/inbox never shows a live
+        // checkpoint on a dead run.
         await cancelOpenClarificationsForRun(ctx.runId).catch(() => undefined);
+        await cancelOpenApprovalsForRun(ctx.runId).catch(() => undefined);
         if (sandbox) await sandbox.dispose();
       }
     },
@@ -370,6 +399,11 @@ export function createNativeAdapter(deps: NativeAdapterDeps): RuntimeAdapter {
     // actually waiting (so the orchestrator can report that honestly).
     async answerClarification(runId, answer) {
       return clarifyGates.get(runId)?.answer(answer) ?? false;
+    },
+
+    // Deliver a human's approval decision to the parked loop.
+    async resolveApproval(runId, decision) {
+      return approvalGates.get(runId)?.settle(decision) ?? false;
     },
   };
 }

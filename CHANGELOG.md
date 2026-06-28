@@ -145,7 +145,8 @@ Plan: [`docs/planning/ENTERPRISE-PLAN.md`](docs/planning/ENTERPRISE-PLAN.md).
 
 ## Enterprise hardening — Phase 2 (Human-in-the-Loop)
 
-Plan: [`docs/planning/ENTERPRISE-PLAN.md`](docs/planning/ENTERPRISE-PLAN.md).
+Plan: [`docs/planning/ENTERPRISE-PLAN.md`](docs/planning/ENTERPRISE-PLAN.md) ·
+module guide: [`docs/modules/HUMAN-IN-THE-LOOP.md`](docs/modules/HUMAN-IN-THE-LOOP.md).
 
 - **P2.1 — clarification round-trip** ✅ — the first *two-way* collaboration: the
   agent can **ask a human a question mid-run and continue with the answer**. A new
@@ -163,8 +164,22 @@ Plan: [`docs/planning/ENTERPRISE-PLAN.md`](docs/planning/ENTERPRISE-PLAN.md).
   Verified by mock-model loop tests (ask → park → answer → resume; cancel-while-
   waiting → CANCELLED) + service/orchestrator units; backend boots with the new
   routes registered (401/403 gated, not 404).
+- **P2.2 — approval gate** ✅ — a human checkpoint *before* the agent does
+  something outward. Before a high-risk tool call (default `open_pr`, configurable
+  via `LUMEY_APPROVAL_TOOLS`) the loop opens a `RunApprovalRequest` and parks on
+  AWAITING_INPUT: **approve** → the action runs; **reject** → it is refused with an
+  `ok:false` result carrying the reason, and the agent continues and picks another
+  path. The gate lives in the loop's per-call execution (`runTools`), so *any*
+  tool can be gated. Built on a shared `Rendezvous<T>` parking primitive — the
+  clarification controller was refactored onto it too, so there's one mechanism,
+  not two. `POST …/approvals/:id/{approve,reject}` wakes the loop first then
+  persists the decision (raced/dead run rejected before being marked decided); the
+  reaper cancels open approvals on restart. FE: an Approve/Reject panel (with
+  reason) on the run card, live. Verified by mock-model loop tests (approve→runs;
+  reject→refuses + feeds reason back; cancel-while-waiting→CANCELLED) +
+  service/orchestrator units; backend boots with the routes registered.
 
 ## Health (current)
 
-1159 backend tests + 39 SDK tests green · typecheck clean (backend + frontend +
+1178 backend tests + 39 SDK tests green · typecheck clean (backend + frontend +
 sdk) · zero dead exports · green at every commit.

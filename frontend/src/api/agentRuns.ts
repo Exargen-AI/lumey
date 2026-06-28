@@ -114,6 +114,44 @@ export async function answerClarification(
   return data.data;
 }
 
+export type ApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+
+/** A human checkpoint the agent must clear before a high-risk action (HITL). */
+export interface RunApproval {
+  id: string;
+  runId: string;
+  action: string;
+  summary: string;
+  detail: string | null;
+  status: ApprovalStatus;
+  reason: string | null;
+  requestedAt: string;
+  decidedAt: string | null;
+  decidedById: string | null;
+}
+
+/** The agent's approval checkpoints on a run (oldest first). */
+export async function listRunApprovals(taskId: string, runId: string): Promise<RunApproval[]> {
+  const { data } = await api.get(`/tasks/${taskId}/runs/${runId}/approvals`);
+  return data.data;
+}
+
+/** Approve or reject a gated action; the parked run resumes with the decision. */
+export async function decideRunApproval(
+  taskId: string,
+  runId: string,
+  approvalId: string,
+  approved: boolean,
+  reason?: string,
+): Promise<{ id: string }> {
+  const verb = approved ? 'approve' : 'reject';
+  const { data } = await api.post(
+    `/tasks/${taskId}/runs/${runId}/approvals/${approvalId}/${verb}`,
+    reason ? { reason } : {},
+  );
+  return data.data;
+}
+
 /**
  * Mint a single-use ticket to open the live SSE trace. A browser `EventSource`
  * can't send the Bearer header, so we authenticate here (via the axios client)

@@ -48,3 +48,21 @@ export interface RunClarificationAnsweredEvent extends DomainEvent {
   readonly taskId: string;
   readonly clarificationId: string;
 }
+
+/** Fact: the agent requested human approval for a high-risk action (parking AWAITING_INPUT). */
+export interface RunApprovalRequestedEvent extends DomainEvent {
+  readonly type: 'run.approval.requested';
+  readonly runId: string;
+  readonly taskId: string;
+  readonly approvalId: string;
+  readonly action: string;
+}
+
+/** Fact: a human approved or rejected an approval (the run is resuming). */
+export interface RunApprovalDecidedEvent extends DomainEvent {
+  readonly type: 'run.approval.decided';
+  readonly runId: string;
+  readonly taskId: string;
+  readonly approvalId: string;
+  readonly approved: boolean;
+}

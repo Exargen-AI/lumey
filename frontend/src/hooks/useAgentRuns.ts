@@ -78,3 +78,24 @@ export function useAnswerClarification(taskId: string, runId: string) {
     },
   });
 }
+
+export function useRunApprovals(taskId: string, runId: string | null, opts: { enabled: boolean }) {
+  return useQuery({
+    queryKey: ['run-approvals', taskId, runId],
+    queryFn: () => runApi.listRunApprovals(taskId, runId as string),
+    enabled: opts.enabled && !!taskId && !!runId,
+  });
+}
+
+export function useDecideRunApproval(taskId: string, runId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { approvalId: string; approved: boolean; reason?: string }) =>
+      runApi.decideRunApproval(taskId, runId, vars.approvalId, vars.approved, vars.reason),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['run-approvals', taskId, runId] });
+      qc.invalidateQueries({ queryKey: ['task-run', taskId, runId] });
+      qc.invalidateQueries({ queryKey: ['task-runs', taskId] });
+    },
+  });
+}

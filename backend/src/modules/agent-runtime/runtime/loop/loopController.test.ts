@@ -429,3 +429,84 @@ describe('LoopController clarification (ask_human)', () => {
     ]);
   });
 });
+
+// ── approval gate (a gated tool call must clear a human checkpoint) ────────────
+
+describe('LoopController approval gate', () => {
+  it('runs a gated action after approval', async () => {
+    const model = new ScriptedModel([
+      callTool('w1', 'write_file', '{"path":"out.txt","content":"done"}'),
+      say('Done; please review.'),
+    ]);
+    const recorder = new FakeRecorder();
+    const outcome = await new LoopController({
+      model, tools, context: engine(), sandbox, recorder,
+      requiresApproval: (name) => name === 'write_file',
+      approve: async () => ({ approved: true }),
+    }).run();
+
+    expect(await sandbox.readFile('out.txt')).toBe('done'); // the action ran
+    expect(outcome.status).toBe(RunStatus.AWAITING_REVIEW);
+    expect(recorder.transitions.map((t) => t.to)).toEqual([
+      RunStatus.RUNNING,
+      RunStatus.AWAITING_INPUT, // parked for approval
+      RunStatus.RUNNING, // approved → resumed
+      RunStatus.AWAITING_REVIEW,
+    ]);
+    expect(recorder.steps.some((s) => s.title === 'Approved')).toBe(true);
+  });
+
+  it('refuses a gated action on rejection and feeds the reason back', async () => {
+    const model = new ScriptedModel([
+      callTool('w1', 'write_file', '{"path":"out.txt","content":"done"}'),
+      say('Understood; stopping for review.'),
+    ]);
+    const recorder = new FakeRecorder();
+    const outcome = await new LoopController({
+      model, tools, context: engine(), sandbox, recorder,
+      requiresApproval: (name) => name === 'write_file',
+      approve: async () => ({ approved: false, reason: 'not allowed on main' }),
+    }).run();
+
+    await expect(sandbox.readFile('out.txt')).rejects.toThrow(); // never written
+    expect(recorder.steps.some((s) => s.title.includes('write_file (failed)'))).toBe(true);
+    expect(recorder.steps.some((s) => s.title === 'Rejected')).toBe(true);
+    expect(outcome.status).toBe(RunStatus.AWAITING_REVIEW);
+  });
+
+  it('cancels if the run is cancelled while awaiting approval', async () => {
+    const model = new ScriptedModel([
+      callTool('w1', 'write_file', '{"path":"out.txt","content":"x"}'),
+      say('unreached'),
+    ]);
+    const recorder = new FakeRecorder();
+    const outcome = await new LoopController({
+      model, tools, context: engine(), sandbox, recorder,
+      requiresApproval: () => true,
+      approve: async () => null, // simulates abort-while-waiting
+    }).run();
+
+    expect(outcome.status).toBe(RunStatus.CANCELLED);
+    expect(recorder.transitions.map((t) => t.to)).toEqual([
+      RunStatus.RUNNING,
+      RunStatus.AWAITING_INPUT,
+      RunStatus.CANCELLED,
+    ]);
+  });
+
+  it('runs ungated tools without any checkpoint', async () => {
+    await sandbox.writeFile('README.md', 'hi');
+    const model = new ScriptedModel([
+      callTool('r1', 'read_file', '{"path":"README.md"}'),
+      say('done'),
+    ]);
+    const recorder = new FakeRecorder();
+    await new LoopController({
+      model, tools, context: engine(), sandbox, recorder,
+      requiresApproval: (name) => name === 'open_pr', // read_file is not gated
+      approve: async () => ({ approved: false }),
+    }).run();
+    // no AWAITING_INPUT park happened
+    expect(recorder.transitions.map((t) => t.to)).toEqual([RunStatus.RUNNING, RunStatus.AWAITING_REVIEW]);
+  });
+});

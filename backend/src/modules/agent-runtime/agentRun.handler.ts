@@ -1,7 +1,8 @@
 import type { Request, Response, NextFunction } from 'express';
 import * as service from '../../services/agentRun.service';
 import { listClarificationsForRun } from '../../services/runClarification.service';
-import { startRun, cancelRun, pauseRun, resumeRun, answerClarification, resolveRunnerAgentId } from './runOrchestrator';
+import { listApprovalsForRun } from '../../services/runApproval.service';
+import { startRun, cancelRun, pauseRun, resumeRun, answerClarification, decideApproval, resolveRunnerAgentId } from './runOrchestrator';
 import { NotFoundError, ValidationError } from '../../utils/errors';
 
 // GET /api/v1/tasks/:id/runs — a task's runs, newest first (summary view).
@@ -105,6 +106,47 @@ export async function answerClarificationHandler(req: Request, res: Response, ne
     if (!answer) throw new ValidationError('An answer is required.');
     await answerClarification({ clarificationId: req.params.clarificationId, answer, userId: req.user!.id });
     res.json({ success: true, data: { id: req.params.clarificationId } });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// GET /api/v1/tasks/:id/runs/:runId/approvals — the agent's approval checkpoints
+// on this run (oldest first), for the run trace + decision UI.
+export async function listRunApprovalsHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const run = await service.getRun(req.params.runId);
+    if (run.taskId !== req.params.id) throw new NotFoundError('Run');
+    const approvals = await listApprovalsForRun(req.params.runId);
+    res.json({ success: true, data: approvals });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// POST /api/v1/tasks/:id/runs/:runId/approvals/:approvalId/approve — let the
+// gated action proceed.
+export async function approveRunApprovalHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const run = await service.getRun(req.params.runId);
+    if (run.taskId !== req.params.id) throw new NotFoundError('Run');
+    const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() || undefined : undefined;
+    await decideApproval({ approvalId: req.params.approvalId, approved: true, reason, userId: req.user!.id });
+    res.json({ success: true, data: { id: req.params.approvalId } });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// POST /api/v1/tasks/:id/runs/:runId/approvals/:approvalId/reject — refuse the
+// gated action; the reason is fed back to the agent.
+export async function rejectRunApprovalHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const run = await service.getRun(req.params.runId);
+    if (run.taskId !== req.params.id) throw new NotFoundError('Run');
+    const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() || undefined : undefined;
+    await decideApproval({ approvalId: req.params.approvalId, approved: false, reason, userId: req.user!.id });
+    res.json({ success: true, data: { id: req.params.approvalId } });
   } catch (err) {
     next(err);
   }

@@ -76,4 +76,11 @@ export interface RuntimeAdapter {
    * runtime that supports the clarification round-trip implements it.
    */
   answerClarification?(runId: string, answer: string): Promise<boolean>;
+
+  /**
+   * Deliver a human's decision to a run parked on a gated action (approval).
+   * Returns `true` if a live loop was waiting and consumed it. Optional: only a
+   * runtime that supports the approval gate implements it.
+   */
+  resolveApproval?(runId: string, decision: { approved: boolean; reason?: string }): Promise<boolean>;
 }

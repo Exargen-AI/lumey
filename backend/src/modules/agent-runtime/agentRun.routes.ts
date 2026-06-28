@@ -69,4 +69,27 @@ router.post(
   handler.answerClarificationHandler,
 );
 
+// HITL approval gate: read the agent's checkpoints, and approve/reject one (a
+// task action — same authz as dispatch/cancel).
+router.get(
+  '/tasks/:id/runs/:runId/approvals',
+  authenticate,
+  taskAccess,
+  handler.listRunApprovalsHandler,
+);
+router.post(
+  '/tasks/:id/runs/:runId/approvals/:approvalId/approve',
+  authenticate,
+  taskAccess,
+  authorizeAny('task.edit_any', 'task.edit_own'),
+  handler.approveRunApprovalHandler,
+);
+router.post(
+  '/tasks/:id/runs/:runId/approvals/:approvalId/reject',
+  authenticate,
+  taskAccess,
+  authorizeAny('task.edit_any', 'task.edit_own'),
+  handler.rejectRunApprovalHandler,
+);
+
 export default router;

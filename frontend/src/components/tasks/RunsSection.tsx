@@ -13,6 +13,9 @@ import {
   Wrench,
   Radio,
   MessageCircleQuestion,
+  ShieldAlert,
+  Check,
+  X,
 } from 'lucide-react';
 import { Button } from '@/components/ui';
 import {
@@ -24,6 +27,8 @@ import {
   useResumeTaskRun,
   useRunClarifications,
   useAnswerClarification,
+  useRunApprovals,
+  useDecideRunApproval,
 } from '@/hooks/useAgentRuns';
 import { useRunStream } from '@/hooks/useRunStream';
 import type { RunStatus, AgentRunSummary } from '@/api/agentRuns';
@@ -112,6 +117,60 @@ function ClarificationPanel({ taskId, runId }: { taskId: string; runId: string }
   );
 }
 
+/**
+ * A pending approval checkpoint, with Approve / Reject (+ optional reason).
+ * Shown when a run is parked on AWAITING_INPUT because the agent attempted a
+ * high-risk action (e.g. `open_pr`): approving lets it proceed, rejecting refuses
+ * it and feeds the reason back to the agent. Both resume the run live.
+ */
+function ApprovalPanel({ taskId, runId }: { taskId: string; runId: string }) {
+  const { data: approvals } = useRunApprovals(taskId, runId, { enabled: true });
+  const decide = useDecideRunApproval(taskId, runId);
+  const [reason, setReason] = useState('');
+  const pending = approvals?.find((a) => a.status === 'PENDING');
+  if (!pending) return null;
+
+  return (
+    <div className="mt-2 rounded-md border border-violet-300/70 dark:border-violet-500/30 bg-violet-50 dark:bg-violet-500/[0.08] p-2.5">
+      <div className="flex items-start gap-2">
+        <ShieldAlert size={14} className="mt-0.5 shrink-0 text-violet-600 dark:text-violet-400" />
+        <div className="min-w-0 flex-1">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-violet-600 dark:text-violet-400">
+            Approval needed
+          </p>
+          <p className="mt-0.5 text-[12px] text-gray-800 dark:text-obsidian-fg">{pending.summary}</p>
+          <input
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Reason (optional; sent to the agent on reject)"
+            className="mt-2 w-full rounded border border-gray-200 dark:border-obsidian-border bg-white dark:bg-obsidian-base px-2 py-1.5 text-[12px] text-gray-800 dark:text-obsidian-fg placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-violet-400"
+          />
+          <div className="mt-1.5 flex justify-end gap-2">
+            <Button
+              size="xs"
+              variant="ghost"
+              leadingIcon={<X size={12} />}
+              loading={decide.isPending && decide.variables?.approved === false}
+              onClick={() => decide.mutate({ approvalId: pending.id, approved: false, reason: reason.trim() || undefined })}
+            >
+              Reject
+            </Button>
+            <Button
+              size="xs"
+              variant="primary"
+              leadingIcon={<Check size={12} />}
+              loading={decide.isPending && decide.variables?.approved === true}
+              onClick={() => decide.mutate({ approvalId: pending.id, approved: true, reason: reason.trim() || undefined })}
+            >
+              Approve
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RunRow({
   taskId,
   run,
@@ -182,7 +241,12 @@ function RunRow({
                   {detail.summary}
                 </p>
               )}
-              {shownStatus === 'AWAITING_INPUT' && <ClarificationPanel taskId={taskId} runId={run.id} />}
+              {shownStatus === 'AWAITING_INPUT' && (
+                <>
+                  <ClarificationPanel taskId={taskId} runId={run.id} />
+                  <ApprovalPanel taskId={taskId} runId={run.id} />
+                </>
+              )}
               {active && (
                 <div className="mt-2 flex items-center gap-2">
                   {shownStatus === 'RUNNING' && (

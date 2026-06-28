@@ -20,6 +20,7 @@ import prisma from '../../config/database';
 import { logger } from '../../lib/logger';
 import { transitionRun } from '../../services/agentRun.service';
 import { cancelOpenClarificationsForRun } from '../../services/runClarification.service';
+import { cancelOpenApprovalsForRun } from '../../services/runApproval.service';
 import { isTerminal } from '../../lib/runLifecycle';
 import type { RuntimeAdapter, RunContext } from './runtimeAdapter';
 
@@ -73,6 +74,7 @@ export async function failInterruptedRuns(): Promise<number> {
   for (const run of stale) {
     await transitionRun(run.id, RunStatus.FAILED, { error: 'Run interrupted by a server restart.' }).catch(() => undefined);
     await cancelOpenClarificationsForRun(run.id).catch(() => undefined);
+    await cancelOpenApprovalsForRun(run.id).catch(() => undefined);
     reaped += 1;
   }
   if (reaped > 0) logger.warn({ reaped }, '[agent-runtime] failed interrupted runs at startup');

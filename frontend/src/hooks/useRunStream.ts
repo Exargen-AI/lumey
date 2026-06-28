@@ -34,9 +34,10 @@ export function useRunStream(
     const invalidate = (): void => {
       void qc.invalidateQueries({ queryKey: ['task-run', taskId, runId] });
       void qc.invalidateQueries({ queryKey: ['task-runs', taskId] });
-      // A run may have just raised (or had answered) a clarification — refetch
-      // so the question/answer UI tracks the live trace.
+      // A run may have just raised (or resolved) a clarification or approval —
+      // refetch so the question/answer + approval UI track the live trace.
       void qc.invalidateQueries({ queryKey: ['run-clarifications', taskId, runId] });
+      void qc.invalidateQueries({ queryKey: ['run-approvals', taskId, runId] });
     };
 
     const connect = async (): Promise<void> => {

@@ -203,6 +203,7 @@ model User {
   refreshTokens           RefreshToken[]
   agentRuns               AgentRun[]                @relation("AgentRunAgent")
   answeredClarifications  RunClarificationRequest[] @relation("ClarificationAnsweredBy")
+  decidedApprovals        RunApprovalRequest[]      @relation("ApprovalDecidedBy")
   uploadedDocuments       ProjectDocument[]         @relation("ProjectDocumentUploader")
   taskSubscriptions       TaskSubscription[]
   sentNudges              TaskNudge[]               @relation("TaskNudgeSender")
@@ -1209,7 +1210,7 @@ enum RunStatus {
   RUNNING // actively working
   PAUSED // suspended by a human at a turn boundary; resumable (transcript alive in memory)
   AWAITING_REVIEW // opened a PR / done-gate; waiting on a human
-  AWAITING_INPUT // blocked on a clarification a human must answer
+  AWAITING_INPUT // blocked on a human decision: a clarification to answer or an action to approve
   BLOCKED // blocked on an external dependency
   SUCCEEDED // completed and accepted
   FAILED // gave up / errored
@@ -1258,6 +1259,7 @@ model AgentRun {
   steps          RunStep[]
   events         RunEvent[]
   clarifications RunClarificationRequest[]
+  approvals      RunApprovalRequest[]
 
   @@index([taskId])
   @@index([agentId])
@@ -1344,4 +1346,36 @@ model RunClarificationRequest {
   @@index([runId])
   @@index([status])
   @@map("run_clarification_requests")
+}
+
+// A human checkpoint the agent must clear before a high-risk action (e.g.
+// `open_pr`). The runtime opens one and the run parks on AWAITING_INPUT; a human
+// approves (the action proceeds) or rejects (the action is refused and the agent
+// gets the reason and continues). PENDING is the only decidable state; a run
+// that ends with open approvals cancels them.
+enum ApprovalStatus {
+  PENDING // awaiting a human decision
+  APPROVED // a human approved; the gated action ran
+  REJECTED // a human rejected; the action was refused
+  CANCELLED // the run ended before this was decided
+}
+
+model RunApprovalRequest {
+  id          String         @id @default(uuid())
+  runId       String
+  action      String // the gated tool, e.g. "open_pr"
+  summary     String         @db.Text // human-readable: what the agent wants to do
+  detail      String?        @db.Text // raw arguments / extra context
+  status      ApprovalStatus @default(PENDING)
+  reason      String?        @db.Text // approver's note (especially on reject)
+  requestedAt DateTime       @default(now())
+  decidedAt   DateTime?
+  decidedById String? // the human (User) who decided
+
+  run       AgentRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  decidedBy User?    @relation("ApprovalDecidedBy", fields: [decidedById], references: [id])
+
+  @@index([runId])
+  @@index([status])
+  @@map("run_approval_requests")
 }

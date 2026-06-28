@@ -50,6 +50,13 @@ export interface OutcomeGrade {
   readonly feedback: string;
 }
 
+/** A human's verdict on a gated action (an approval request). */
+export interface ApprovalDecision {
+  readonly approved: boolean;
+  /** Approver's note — especially the reason for a rejection (fed back to the agent). */
+  readonly reason?: string;
+}
+
 /**
  * Grades the agent's final result against the task's done-criteria (Outcomes).
  * Injected by the adapter (which holds the acceptance criteria); the loop stays
@@ -76,6 +83,18 @@ export interface LoopDeps {
    * injected as the tool result. Resolves `null` if cancelled while waiting.
    */
   readonly clarify?: (question: string, signal?: AbortSignal) => Promise<string | null>;
+  /**
+   * Predicate: does a call to this tool need human approval before it runs?
+   * Paired with {@link approve}; if either is missing, no action is gated.
+   */
+  readonly requiresApproval?: (toolName: string) => boolean;
+  /**
+   * Request human approval for a gated action: opens an approval, parks the run
+   * on AWAITING_INPUT, and resolves the human's decision (or `null` if cancelled
+   * while waiting). On approve the loop runs the action; on reject it refuses and
+   * feeds the reason back to the agent.
+   */
+  readonly approve?: (request: { action: string; summary: string; detail?: string }, signal?: AbortSignal) => Promise<ApprovalDecision | null>;
   /** When set, grade the final result and revise on failure (Outcomes). */
   readonly grader?: Grader;
   /** Max grade→revise cycles before handing off to a human. Default 2. */
@@ -116,6 +135,17 @@ function parseAskQuestion(rawArgs: string): string {
   } catch {
     return 'The agent requested human input but its question could not be parsed.';
   }
+}
+
+/** A human-readable one-liner of what a gated tool call wants to do (for the approval card). */
+function approvalSummary(call: ModelToolCall): string {
+  try {
+    const args = JSON.parse(call.arguments || '{}') as Record<string, unknown>;
+    if (typeof args.title === 'string' && args.title.trim()) return `${call.name}: ${args.title.trim()}`;
+  } catch {
+    /* fall through to the raw-args form */
+  }
+  return `${call.name} ${firstLine(call.arguments || '', 120)}`.trim();
 }
 
 export class LoopController {
@@ -204,7 +234,9 @@ export class LoopController {
         continue;
       }
 
-      const results = await this.d.tools.runAll([...response.toolCalls], { sandbox: this.d.sandbox, signal: this.d.signal });
+      const gated = await this.runTools(response.toolCalls, turns, usage);
+      if (!Array.isArray(gated)) return gated; // cancelled during an approval wait
+      const results = gated;
       await this.recordToolResults(response.toolCalls, results);
       results.forEach((r, i) => {
         transcript.push({ role: 'tool', content: r.content, toolCallId: response.toolCalls[i].id, name: r.name });
@@ -255,6 +287,61 @@ export class LoopController {
       });
     }
     return null;
+  }
+
+  /**
+   * Run a turn's tool calls in order, gating any that need human approval. A
+   * gated call parks the run on AWAITING_INPUT until a human decides: approve →
+   * the call runs normally; reject → it is refused with an `ok:false` result the
+   * agent reads and reacts to (no retry); cancel-while-waiting → the run ends
+   * CANCELLED (returned as a LoopOutcome so the caller stops the loop). Ungated
+   * calls run straight through.
+   */
+  private async runTools(calls: readonly ModelToolCall[], turns: number, usage: RunUsage): Promise<ToolResult[] | LoopOutcome> {
+    const ctx = { sandbox: this.d.sandbox, signal: this.d.signal };
+    const results: ToolResult[] = [];
+    for (const call of calls) {
+      if (this.d.approve && this.d.requiresApproval?.(call.name)) {
+        const decision = await this.handleApproval(call);
+        if (decision === null) return this.finishCancelled(turns, usage); // cancelled while waiting
+        if (!decision.approved) {
+          results.push({
+            callId: call.id,
+            name: call.name,
+            ok: false,
+            content: `Human rejected this action${decision.reason ? `: ${decision.reason}` : ''}. Do not retry it; choose another approach or stop and request review.`,
+            durationMs: 0,
+          });
+          continue;
+        }
+        // approved — fall through and run the action
+      }
+      results.push(await this.d.tools.run(call, ctx));
+    }
+    return results;
+  }
+
+  /**
+   * Park the run on a human approval for a gated action. Records the request,
+   * transitions AWAITING_INPUT, and awaits the decision via the injected
+   * `approve` gate; on a decision, transitions back to RUNNING and returns it.
+   * Returns `null` if the run was cancelled while waiting.
+   */
+  private async handleApproval(call: ModelToolCall): Promise<ApprovalDecision | null> {
+    const summary = approvalSummary(call);
+    await this.d.recorder.step({ type: RunStepType.REVIEW_REQUEST, title: `Approval requested: ${call.name}`, detail: firstLine(summary, 200) });
+    await this.d.recorder.transition(RunStatus.AWAITING_INPUT, { summary: `Approval requested — ${firstLine(summary, 160)}` });
+
+    const decision = await this.d.approve!({ action: call.name, summary, detail: call.arguments }, this.d.signal);
+    if (decision === null) return null; // cancelled while waiting
+
+    await this.d.recorder.step({
+      type: RunStepType.PLAN,
+      title: decision.approved ? 'Approved' : 'Rejected',
+      ...(decision.reason ? { detail: firstLine(decision.reason, 200) } : {}),
+    });
+    await this.d.recorder.transition(RunStatus.RUNNING);
+    return decision;
   }
 
   private async recordToolResults(calls: readonly ModelToolCall[], results: ToolResult[]): Promise<void> {

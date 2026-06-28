@@ -32,7 +32,15 @@ vi.mock('../../services/runClarification.service', async (orig) => ({
   recordClarificationAnswer: recordAnswerSpy,
 }));
 
-import { startRun, cancelRun, pauseRun, resumeRun, answerClarification, resolveRunnerAgentId } from './runOrchestrator';
+const { recordDecisionSpy } = vi.hoisted(() => ({
+  recordDecisionSpy: vi.fn().mockResolvedValue({ runId: 'r1', taskId: 't1' }),
+}));
+vi.mock('../../services/runApproval.service', async (orig) => ({
+  ...(await orig<Record<string, unknown>>()),
+  recordApprovalDecision: recordDecisionSpy,
+}));
+
+import { startRun, cancelRun, pauseRun, resumeRun, answerClarification, decideApproval, resolveRunnerAgentId } from './runOrchestrator';
 import { referenceAdapter } from './adapters/reference';
 import { nativeAdapter } from './adapters/native';
 import type { RuntimeAdapter } from './runtimeAdapter';
@@ -217,6 +225,54 @@ describe('answerClarification', () => {
   it('throws NotFoundError for a missing clarification', async () => {
     prismaMock.runClarificationRequest.findUnique.mockResolvedValue(null as never);
     await expect(answerClarification({ clarificationId: 'nope', answer: 'x', userId: 'u1' }))
+      .rejects.toBeInstanceOf(NotFoundError);
+  });
+});
+
+describe('decideApproval', () => {
+  const pendingOnAwaitingInput = {
+    status: 'PENDING',
+    runId: 'r1',
+    run: { status: 'AWAITING_INPUT', adapterId: 'native' },
+  };
+
+  it('wakes the parked loop then persists the decision', async () => {
+    prismaMock.runApprovalRequest.findUnique.mockResolvedValue(pendingOnAwaitingInput as never);
+    const resolveSpy = vi.spyOn(native, 'resolveApproval').mockResolvedValue(true);
+
+    await decideApproval({ approvalId: 'a1', approved: true, userId: 'u1' });
+
+    expect(resolveSpy).toHaveBeenCalledWith('r1', { approved: true, reason: undefined });
+    expect(recordDecisionSpy).toHaveBeenCalledWith({ approvalId: 'a1', approved: true, userId: 'u1' });
+    resolveSpy.mockRestore();
+  });
+
+  it('rejects (and does not persist) when no live loop is waiting', async () => {
+    prismaMock.runApprovalRequest.findUnique.mockResolvedValue(pendingOnAwaitingInput as never);
+    const resolveSpy = vi.spyOn(native, 'resolveApproval').mockResolvedValue(false);
+    await expect(decideApproval({ approvalId: 'a1', approved: false, userId: 'u1' }))
+      .rejects.toBeInstanceOf(ValidationError);
+    expect(recordDecisionSpy).not.toHaveBeenCalled();
+    resolveSpy.mockRestore();
+  });
+
+  it('rejects an approval that is not PENDING', async () => {
+    prismaMock.runApprovalRequest.findUnique.mockResolvedValue({ ...pendingOnAwaitingInput, status: 'APPROVED' } as never);
+    await expect(decideApproval({ approvalId: 'a1', approved: true, userId: 'u1' }))
+      .rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it('rejects when the run is not AWAITING_INPUT', async () => {
+    prismaMock.runApprovalRequest.findUnique.mockResolvedValue({
+      ...pendingOnAwaitingInput, run: { status: 'RUNNING', adapterId: 'native' },
+    } as never);
+    await expect(decideApproval({ approvalId: 'a1', approved: true, userId: 'u1' }))
+      .rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it('throws NotFoundError for a missing approval', async () => {
+    prismaMock.runApprovalRequest.findUnique.mockResolvedValue(null as never);
+    await expect(decideApproval({ approvalId: 'nope', approved: true, userId: 'u1' }))
       .rejects.toBeInstanceOf(NotFoundError);
   });
 });

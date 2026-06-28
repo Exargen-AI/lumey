@@ -5,10 +5,11 @@
  * runtime-neutral; the adapter does the real work behind the seam.
  */
 import prisma from '../../config/database';
-import { ClarificationStatus, RunStatus, UserType } from '@prisma/client';
+import { ApprovalStatus, ClarificationStatus, RunStatus, UserType } from '@prisma/client';
 import { NotFoundError, ValidationError } from '../../utils/errors';
 import { createRun, transitionRun } from '../../services/agentRun.service';
 import { recordClarificationAnswer } from '../../services/runClarification.service';
+import { recordApprovalDecision } from '../../services/runApproval.service';
 import { isTerminal } from '../../lib/runLifecycle';
 import { getAdapter, DEFAULT_ADAPTER_ID } from './adapterRegistry';
 import { dispatchRun, isRunInflight } from './runExecutor';
@@ -153,6 +154,38 @@ export async function answerClarification(input: { clarificationId: string; answ
   }
 
   return recordClarificationAnswer(input);
+}
+
+/**
+ * Decide a human approval the agent is waiting on (approve or reject a gated
+ * action). Same shape as {@link answerClarification}: wake the parked loop
+ * first — on approve it runs the action, on reject it refuses and continues —
+ * then persist the decision, so a raced/dead run is rejected before being marked
+ * decided.
+ */
+export async function decideApproval(input: { approvalId: string; approved: boolean; reason?: string; userId: string }) {
+  const approval = await prisma.runApprovalRequest.findUnique({
+    where: { id: input.approvalId },
+    select: { status: true, runId: true, run: { select: { status: true, adapterId: true } } },
+  });
+  if (!approval) throw new NotFoundError('Approval');
+  if (approval.status !== ApprovalStatus.PENDING) {
+    throw new ValidationError(`This approval is already ${approval.status.toLowerCase()}.`);
+  }
+  if (approval.run.status !== RunStatus.AWAITING_INPUT) {
+    throw new ValidationError(`This run is not awaiting a decision (it is ${approval.run.status}).`);
+  }
+
+  const adapter = getAdapter(approval.run.adapterId);
+  if (!adapter.resolveApproval || !isRunInflight(approval.runId)) {
+    throw new ValidationError('This run is no longer waiting for a decision on this server.');
+  }
+  const woke = await adapter.resolveApproval(approval.runId, { approved: input.approved, reason: input.reason });
+  if (!woke) {
+    throw new ValidationError('This run is not currently waiting for a decision.');
+  }
+
+  return recordApprovalDecision(input);
 }
 
 /**
