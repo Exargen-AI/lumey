@@ -35,3 +35,25 @@ export function useCancelTaskRun(taskId: string) {
     },
   });
 }
+
+export function usePauseTaskRun(taskId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (runId: string) => runApi.pauseTaskRun(taskId, runId),
+    onSuccess: (_data, runId) => {
+      qc.invalidateQueries({ queryKey: ['task-runs', taskId] });
+      qc.invalidateQueries({ queryKey: ['task-run', taskId, runId] });
+    },
+  });
+}
+
+export function useResumeTaskRun(taskId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (runId: string) => runApi.resumeTaskRun(taskId, runId),
+    onSuccess: (_data, runId) => {
+      qc.invalidateQueries({ queryKey: ['task-runs', taskId] });
+      qc.invalidateQueries({ queryKey: ['task-run', taskId, runId] });
+    },
+  });
+}

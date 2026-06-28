@@ -5,6 +5,7 @@ import path from 'path';
 import { spawn } from 'child_process';
 import { RunStatus, RunStepType } from '@prisma/client';
 import { LoopController, type RunRecorder } from './loopController';
+import { PauseController } from './pauseController';
 import { ContextEngine } from '../context/contextEngine';
 import { buildSystemPrompt } from '../context/systemPrompt';
 import { ToolRunner } from '../tools/toolRunner';
@@ -47,6 +48,7 @@ class ThrowingModel implements ModelClient {
   async complete(): Promise<ModelResponse> {
     throw new Error('model exploded');
   }
+  // eslint-disable-next-line require-yield
   async *stream(): AsyncIterable<never> {
     throw new Error('not used');
   }
@@ -303,5 +305,66 @@ describe('LoopController — full agent flow over a real git worktree', () => {
       if (sb) await sb.dispose();
       await fs.rm(repo, { recursive: true, force: true });
     }
+  });
+});
+
+// ── pause / resume (cooperative suspend at a turn boundary) ───────────────────
+
+/** A model that counts how many turns the loop has actually taken. */
+class CountingModel implements ModelClient {
+  readonly model = 'mock';
+  calls = 0;
+  constructor(private readonly script: ModelResponse[]) {}
+  async complete(): Promise<ModelResponse> {
+    return this.script[Math.min(this.calls++, this.script.length - 1)];
+  }
+  // eslint-disable-next-line require-yield
+  async *stream(): AsyncIterable<never> {
+    throw new Error('not used');
+  }
+}
+
+const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
+
+describe('LoopController pause/resume', () => {
+  it('parks at the turn boundary while paused, then continues on resume', async () => {
+    const model = new CountingModel([say('Done; please review.')]);
+    const recorder = new FakeRecorder();
+    const pause = new PauseController();
+    pause.pause(); // paused before the loop ever runs a turn
+
+    const loop = new LoopController({ model, tools, context: engine(), sandbox, recorder, pause });
+    const running = loop.run();
+
+    // The loop transitions RUNNING up front, then parks before the first turn:
+    // no model call happens while paused.
+    await tick();
+    expect(model.calls).toBe(0);
+    expect(recorder.transitions.map((t) => t.to)).toEqual([RunStatus.RUNNING]);
+
+    pause.resume();
+    const outcome = await running;
+
+    expect(model.calls).toBe(1); // the turn ran only after resume
+    expect(outcome.status).toBe(RunStatus.AWAITING_REVIEW);
+  });
+
+  it('lets a cancel win over a pause without stranding the loop', async () => {
+    const model = new CountingModel([say('Done; please review.')]);
+    const recorder = new FakeRecorder();
+    const pause = new PauseController();
+    const ac = new AbortController();
+    pause.pause();
+
+    const loop = new LoopController({ model, tools, context: engine(), sandbox, recorder, pause, signal: ac.signal });
+    const running = loop.run();
+    await tick();
+    expect(model.calls).toBe(0); // parked
+
+    ac.abort(); // cancel while paused
+    const outcome = await running;
+
+    expect(outcome.status).toBe(RunStatus.CANCELLED); // unparked → observed the abort
+    expect(model.calls).toBe(0); // never ran a turn
   });
 });

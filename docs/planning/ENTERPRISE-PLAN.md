@@ -429,16 +429,19 @@ Each item is one PR-sized vertical slice. Three model options
 no model code changes needed for this backlog.
 
 ### Schema
-- [ ] `RunStatus += PAUSED` + lifecycle edges (RUNNING↔PAUSED) in `runLifecycle.ts`.
+- [x] `RunStatus += PAUSED` + lifecycle edges (RUNNING↔PAUSED) in `runLifecycle.ts`. ✅ P1.2
 - [ ] `RunClarificationRequest`, `RunApprovalRequest` models + migration.
 - [ ] `RunPullRequest`, `RunCheck`, `RunCommit`, `RunArtifact` models + migration.
 - [ ] `Activity.actorType` enum column + backfill default `HUMAN`.
 - [ ] `AgentPolicy`, `Budget`, `RunReceipt` models + migration (Phase-4 slice).
 
 ### Backend
-- [ ] Run **event hub** + `GET /tasks/:id/runs/:runId/stream` (SSE, cookie-auth,
-      `taskAccess`, signal-only; subscribe to existing `run.*` bus facts).
-- [ ] `pauseRun`/`resumeRun` in `runOrchestrator.ts` + `POST .../pause|resume`.
+- [x] Run **event hub** + `GET /tasks/:id/runs/:runId/stream` (SSE; single-use
+      run-scoped **stream ticket** instead of cookie-auth — EventSource can't send
+      a Bearer header; `taskAccess`, signal-only; subscribe to existing `run.*`
+      bus facts). ✅ P1.1
+- [x] `pauseRun`/`resumeRun` in `runOrchestrator.ts` + `POST .../pause|resume`
+      (cooperative `PauseController` parks the loop at a turn boundary). ✅ P1.2
 - [ ] `runClarification.service` + `POST /clarifications/:id/answer`; `GET /inbox`.
 - [ ] `runApproval.service` + approval gate in the `open_pr` finalize path +
       `POST /approvals/:id/(approve|reject)`.
@@ -459,15 +462,18 @@ no model code changes needed for this backlog.
       trip a circuit breaker on budget exceed.
 
 ### Frontend
-- [ ] `RunsSection` → `EventSource` live trace + Pause/Resume/Cancel + token/cost meter.
+- [x] `RunsSection` → `EventSource` live trace (✅ P1.1) + Pause/Resume/Cancel
+      buttons + "Paused" pill (✅ P1.2). *(token/cost meter still to come.)*
 - [ ] `InboxPage` (extend `TriageInboxPage`): clarification answer + approval modals.
 - [ ] Run PR/check **pipeline strip** on the task card.
 - [ ] `AgentOpsPage` (admin) — runs list + filter/search + drill to live replay.
 - [ ] (Phase-4) `PolicyPage` skeleton.
 
 ### Tests
-- [ ] SSE auth/gating + reconnect-from-cursor.
-- [ ] pause→resume resumes from transcript; lifecycle edge validation.
+- [x] SSE auth/gating (single-use ticket: mint/consume/replay→401, run-scoping,
+      TTL). ✅ P1.1 *(reconnect-from-cursor still to come.)*
+- [x] pause→resume resumes the live transcript (mock-model loop parks then
+      continues; cancel beats pause); lifecycle edge validation. ✅ P1.2
 - [ ] clarification round-trip; approval blocks `open_pr` until approved.
 - [ ] `check_run` webhook → `RunCheck` attach; graph assembly; idempotent replay.
 - [ ] `actorType` recorded for agent vs human actions; RunReceipt completeness.

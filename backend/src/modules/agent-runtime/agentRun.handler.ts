@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import * as service from '../../services/agentRun.service';
-import { startRun, cancelRun, resolveRunnerAgentId } from './runOrchestrator';
+import { startRun, cancelRun, pauseRun, resumeRun, resolveRunnerAgentId } from './runOrchestrator';
 import { NotFoundError, ValidationError } from '../../utils/errors';
 
 // GET /api/v1/tasks/:id/runs — a task's runs, newest first (summary view).
@@ -51,6 +51,30 @@ export async function cancelTaskRunHandler(req: Request, res: Response, next: Ne
     const run = await service.getRun(req.params.runId);
     if (run.taskId !== req.params.id) throw new NotFoundError('Run');
     await cancelRun(req.params.runId);
+    res.json({ success: true, data: { id: req.params.runId } });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// POST /api/v1/tasks/:id/runs/:runId/pause — suspend a running run in place.
+export async function pauseTaskRunHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const run = await service.getRun(req.params.runId);
+    if (run.taskId !== req.params.id) throw new NotFoundError('Run');
+    await pauseRun(req.params.runId);
+    res.json({ success: true, data: { id: req.params.runId } });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// POST /api/v1/tasks/:id/runs/:runId/resume — continue a paused run from where it parked.
+export async function resumeTaskRunHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const run = await service.getRun(req.params.runId);
+    if (run.taskId !== req.params.id) throw new NotFoundError('Run');
+    await resumeRun(req.params.runId);
     res.json({ success: true, data: { id: req.params.runId } });
   } catch (err) {
     next(err);

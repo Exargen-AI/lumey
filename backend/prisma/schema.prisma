@@ -1206,6 +1206,7 @@ model NotificationPreference {
 enum RunStatus {
   QUEUED // created, not yet started
   RUNNING // actively working
+  PAUSED // suspended by a human at a turn boundary; resumable (transcript alive in memory)
   AWAITING_REVIEW // opened a PR / done-gate; waiting on a human
   AWAITING_INPUT // blocked on a clarification a human must answer
   BLOCKED // blocked on an external dependency

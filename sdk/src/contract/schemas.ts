@@ -14,6 +14,7 @@ import { z } from 'zod';
 export const RunStatusSchema = z.enum([
   'QUEUED',
   'RUNNING',
+  'PAUSED',
   'AWAITING_REVIEW',
   'AWAITING_INPUT',
   'BLOCKED',

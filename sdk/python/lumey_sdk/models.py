@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TypedDict, Optional, List, Literal, Any, Dict
 
 
-RunStatus = Literal["QUEUED", "RUNNING", "AWAITING_REVIEW", "AWAITING_INPUT", "BLOCKED", "SUCCEEDED", "FAILED", "CANCELLED"]
+RunStatus = Literal["QUEUED", "RUNNING", "PAUSED", "AWAITING_REVIEW", "AWAITING_INPUT", "BLOCKED", "SUCCEEDED", "FAILED", "CANCELLED"]
 
 
 RunStepType = Literal["PLAN", "TOOL_CALL", "EDIT", "COMMAND", "TEST", "REVIEW_REQUEST"]

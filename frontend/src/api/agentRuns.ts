@@ -3,6 +3,7 @@ import api from './client';
 export type RunStatus =
   | 'QUEUED'
   | 'RUNNING'
+  | 'PAUSED'
   | 'AWAITING_REVIEW'
   | 'AWAITING_INPUT'
   | 'BLOCKED'
@@ -64,6 +65,18 @@ export async function startTaskRun(taskId: string): Promise<AgentRunSummary> {
 
 export async function cancelTaskRun(taskId: string, runId: string): Promise<{ id: string }> {
   const { data } = await api.post(`/tasks/${taskId}/runs/${runId}/cancel`, {});
+  return data.data;
+}
+
+/** Suspend a running run in place (transcript kept alive); resume continues it. */
+export async function pauseTaskRun(taskId: string, runId: string): Promise<{ id: string }> {
+  const { data } = await api.post(`/tasks/${taskId}/runs/${runId}/pause`, {});
+  return data.data;
+}
+
+/** Continue a paused run from where it parked. */
+export async function resumeTaskRun(taskId: string, runId: string): Promise<{ id: string }> {
+  const { data } = await api.post(`/tasks/${taskId}/runs/${runId}/resume`, {});
   return data.data;
 }
 

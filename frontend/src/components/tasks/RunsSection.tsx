@@ -2,6 +2,7 @@ import { useState } from 'react';
 import {
   Bot,
   Play,
+  Pause,
   ChevronRight,
   ChevronDown,
   ListChecks,
@@ -18,6 +19,8 @@ import {
   useTaskRun,
   useStartTaskRun,
   useCancelTaskRun,
+  usePauseTaskRun,
+  useResumeTaskRun,
 } from '@/hooks/useAgentRuns';
 import { useRunStream } from '@/hooks/useRunStream';
 import type { RunStatus, AgentRunSummary } from '@/api/agentRuns';
@@ -27,6 +30,7 @@ import { cn } from '@/lib/cn';
 const STATUS: Record<RunStatus, { label: string; dot: string; text: string }> = {
   QUEUED: { label: 'Queued', dot: 'bg-gray-400', text: 'text-gray-500 dark:text-obsidian-muted' },
   RUNNING: { label: 'Running', dot: 'bg-blue-500 animate-pulse', text: 'text-blue-600 dark:text-blue-400' },
+  PAUSED: { label: 'Paused', dot: 'bg-indigo-400', text: 'text-indigo-600 dark:text-indigo-400' },
   AWAITING_REVIEW: { label: 'Awaiting review', dot: 'bg-amber-500', text: 'text-amber-600 dark:text-amber-400' },
   AWAITING_INPUT: { label: 'Needs input', dot: 'bg-amber-500', text: 'text-amber-600 dark:text-amber-400' },
   BLOCKED: { label: 'Blocked', dot: 'bg-rose-500', text: 'text-rose-600 dark:text-rose-400' },
@@ -69,6 +73,8 @@ function RunRow({
 }) {
   const { data: detail, isLoading } = useTaskRun(taskId, open ? run.id : null);
   const cancel = useCancelTaskRun(taskId);
+  const pause = usePauseTaskRun(taskId);
+  const resume = useResumeTaskRun(taskId);
   const active = !TERMINAL.includes(run.status);
 
   // Live trace: while this run is open AND still active, stream its facts. The
@@ -125,15 +131,38 @@ function RunRow({
                 </p>
               )}
               {active && (
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  className="mt-2"
-                  loading={cancel.isPending}
-                  onClick={() => cancel.mutate(run.id)}
-                >
-                  Cancel run
-                </Button>
+                <div className="mt-2 flex items-center gap-2">
+                  {shownStatus === 'RUNNING' && (
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      leadingIcon={<Pause size={12} />}
+                      loading={pause.isPending}
+                      onClick={() => pause.mutate(run.id)}
+                    >
+                      Pause
+                    </Button>
+                  )}
+                  {shownStatus === 'PAUSED' && (
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      leadingIcon={<Play size={12} />}
+                      loading={resume.isPending}
+                      onClick={() => resume.mutate(run.id)}
+                    >
+                      Resume
+                    </Button>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    loading={cancel.isPending}
+                    onClick={() => cancel.mutate(run.id)}
+                  >
+                    Cancel run
+                  </Button>
+                </div>
               )}
             </>
           ) : null}

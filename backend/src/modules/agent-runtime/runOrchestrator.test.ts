@@ -1,7 +1,7 @@
 import './../../test/prismaMock';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { prismaMock } from '../../test/prismaMock';
-import { UserType } from '@prisma/client';
+import { RunStatus, UserType } from '@prisma/client';
 import { NotFoundError, ValidationError } from '../../utils/errors';
 
 const { createRunSpy, transitionRunSpy } = vi.hoisted(() => ({
@@ -14,11 +14,26 @@ vi.mock('../../services/agentRun.service', async (orig) => ({
   transitionRun: transitionRunSpy,
 }));
 
-import { startRun, cancelRun, resolveRunnerAgentId } from './runOrchestrator';
+// pause/resume require the run to be executing *in this process*; control that
+// gate while keeping the real dispatchRun (startRun's tests exercise it).
+const { isRunInflightSpy } = vi.hoisted(() => ({ isRunInflightSpy: vi.fn().mockReturnValue(true) }));
+vi.mock('./runExecutor', async (orig) => ({
+  ...(await orig<Record<string, unknown>>()),
+  isRunInflight: isRunInflightSpy,
+}));
+
+import { startRun, cancelRun, pauseRun, resumeRun, resolveRunnerAgentId } from './runOrchestrator';
 import { referenceAdapter } from './adapters/reference';
+import { nativeAdapter } from './adapters/native';
+import type { RuntimeAdapter } from './runtimeAdapter';
+
+// pause/resume are optional on the seam; the native adapter implements them, so
+// spy through a Required view to satisfy the types.
+const native = nativeAdapter as Required<RuntimeAdapter>;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  isRunInflightSpy.mockReturnValue(true);
   prismaMock.task.findUnique.mockResolvedValue({
     id: 't1',
     title: 'Build login',
@@ -82,6 +97,62 @@ describe('cancelRun', () => {
   it('throws NotFoundError for a missing run', async () => {
     prismaMock.agentRun.findUnique.mockResolvedValue(null as never);
     await expect(cancelRun('nope')).rejects.toBeInstanceOf(NotFoundError);
+  });
+});
+
+describe('pauseRun', () => {
+  it('flags the loop then records PAUSED for a running, in-flight, pausable run', async () => {
+    prismaMock.agentRun.findUnique.mockResolvedValue({ status: 'RUNNING', adapterId: 'native' } as never);
+    const pauseSpy = vi.spyOn(native, 'pause').mockResolvedValue();
+
+    expect(await pauseRun('r1')).toBeNull();
+
+    expect(pauseSpy).toHaveBeenCalledWith('r1');
+    expect(transitionRunSpy).toHaveBeenCalledWith('r1', RunStatus.PAUSED, expect.objectContaining({ summary: expect.any(String) }));
+    pauseSpy.mockRestore();
+  });
+
+  it('refuses to pause a run that is not RUNNING', async () => {
+    prismaMock.agentRun.findUnique.mockResolvedValue({ status: 'AWAITING_REVIEW', adapterId: 'native' } as never);
+    await expect(pauseRun('r1')).rejects.toBeInstanceOf(ValidationError);
+    expect(transitionRunSpy).not.toHaveBeenCalled();
+  });
+
+  it('refuses to pause when the runtime cannot suspend (reference has no pause)', async () => {
+    prismaMock.agentRun.findUnique.mockResolvedValue({ status: 'RUNNING', adapterId: 'reference' } as never);
+    await expect(pauseRun('r1')).rejects.toBeInstanceOf(ValidationError);
+    expect(transitionRunSpy).not.toHaveBeenCalled();
+  });
+
+  it('refuses to pause a run that is not executing on this server', async () => {
+    prismaMock.agentRun.findUnique.mockResolvedValue({ status: 'RUNNING', adapterId: 'native' } as never);
+    isRunInflightSpy.mockReturnValue(false);
+    await expect(pauseRun('r1')).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it('throws NotFoundError for a missing run', async () => {
+    prismaMock.agentRun.findUnique.mockResolvedValue(null as never);
+    await expect(pauseRun('nope')).rejects.toBeInstanceOf(NotFoundError);
+  });
+});
+
+describe('resumeRun', () => {
+  it('records RUNNING before unblocking the loop (so later transitions stay legal)', async () => {
+    prismaMock.agentRun.findUnique.mockResolvedValue({ status: 'PAUSED', adapterId: 'native' } as never);
+    const order: string[] = [];
+    transitionRunSpy.mockImplementation(async () => { order.push('transition'); return {}; });
+    const resumeSpy = vi.spyOn(native, 'resume').mockImplementation(async () => { order.push('resume'); });
+
+    expect(await resumeRun('r1')).toBeNull();
+
+    expect(transitionRunSpy).toHaveBeenCalledWith('r1', RunStatus.RUNNING, expect.objectContaining({ summary: expect.any(String) }));
+    expect(order).toEqual(['transition', 'resume']); // DB first, then unpark
+    resumeSpy.mockRestore();
+  });
+
+  it('refuses to resume a run that is not PAUSED', async () => {
+    prismaMock.agentRun.findUnique.mockResolvedValue({ status: 'RUNNING', adapterId: 'native' } as never);
+    await expect(resumeRun('r1')).rejects.toBeInstanceOf(ValidationError);
   });
 });
 

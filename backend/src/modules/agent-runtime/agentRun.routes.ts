@@ -38,5 +38,19 @@ router.post(
   authorizeAny('task.edit_any', 'task.edit_own'),
   handler.cancelTaskRunHandler,
 );
+router.post(
+  '/tasks/:id/runs/:runId/pause',
+  authenticate,
+  taskAccess,
+  authorizeAny('task.edit_any', 'task.edit_own'),
+  handler.pauseTaskRunHandler,
+);
+router.post(
+  '/tasks/:id/runs/:runId/resume',
+  authenticate,
+  taskAccess,
+  authorizeAny('task.edit_any', 'task.edit_own'),
+  handler.resumeTaskRunHandler,
+);
 
 export default router;

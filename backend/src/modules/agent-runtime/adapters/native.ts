@@ -24,6 +24,7 @@ import { appendStep, transitionRun, recordUsage } from '../../../services/agentR
 import { isTerminal } from '../../../lib/runLifecycle';
 import type { RuntimeAdapter, RunContext } from '../runtimeAdapter';
 import { LoopController, type LoopBudget, type RunRecorder, type Grader } from '../runtime/loop/loopController';
+import { PauseController } from '../runtime/loop/pauseController';
 import { ContextEngine } from '../runtime/context/contextEngine';
 import { buildSystemPrompt } from '../runtime/context/systemPrompt';
 import { ToolRunner } from '../runtime/tools/toolRunner';
@@ -263,6 +264,10 @@ function modelSummarizer(model: ModelClient): (older: ChatMessage[]) => Promise<
 
 export function createNativeAdapter(deps: NativeAdapterDeps): RuntimeAdapter {
   const inflight = new Map<string, AbortController>();
+  // One pause handle per in-flight run, parallel to its AbortController. pause()
+  // and resume() reach the *live* loop through this; the orchestrator owns the
+  // matching DB transition.
+  const pauses = new Map<string, PauseController>();
 
   return {
     id: 'native',
@@ -277,6 +282,8 @@ export function createNativeAdapter(deps: NativeAdapterDeps): RuntimeAdapter {
     async execute(ctx) {
       const controller = new AbortController();
       inflight.set(ctx.runId, controller);
+      const pause = new PauseController();
+      pauses.set(ctx.runId, pause);
       let sandbox: Sandbox | undefined;
       try {
         const model = deps.modelFactory(); // throws if no model configured
@@ -294,6 +301,8 @@ export function createNativeAdapter(deps: NativeAdapterDeps): RuntimeAdapter {
           recorder: serviceRecorder(ctx.runId),
           budget: deps.budget,
           signal: controller.signal,
+          pause, // honour human suspend/resume at turn boundaries
+
           // Outcomes: grade the result vs acceptance criteria and revise on fail.
           grader: hasAcceptanceCriteria(ctx.task.acceptanceCriteria) ? modelGrader(model, ctx) : undefined,
         });
@@ -307,6 +316,7 @@ export function createNativeAdapter(deps: NativeAdapterDeps): RuntimeAdapter {
         await failRun(ctx.runId, e); // a setup error before the loop transitioned RUNNING
       } finally {
         inflight.delete(ctx.runId);
+        pauses.delete(ctx.runId);
         if (sandbox) await sandbox.dispose();
       }
     },
@@ -314,6 +324,9 @@ export function createNativeAdapter(deps: NativeAdapterDeps): RuntimeAdapter {
     async cancel(runId) {
       const controller = inflight.get(runId);
       if (controller) {
+        // Resume first so a *paused* loop unparks and can observe the abort —
+        // otherwise it would sit waiting forever and never reach CANCELLED.
+        pauses.get(runId)?.resume();
         controller.abort(); // in-flight: the loop transitions CANCELLED at its next checkpoint
         return;
       }
@@ -321,6 +334,17 @@ export function createNativeAdapter(deps: NativeAdapterDeps): RuntimeAdapter {
       if (run && !isTerminal(run.status)) {
         await transitionRun(runId, RunStatus.CANCELLED);
       }
+    },
+
+    // Reach the live loop's PauseController. The orchestrator has already checked
+    // the run is genuinely in-flight here and owns the DB transition; these just
+    // flip the in-memory flag the loop parks on.
+    async pause(runId) {
+      pauses.get(runId)?.pause();
+    },
+
+    async resume(runId) {
+      pauses.get(runId)?.resume();
     },
   };
 }

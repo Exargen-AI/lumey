@@ -2,6 +2,7 @@
  * The agent-run lifecycle state machine.
  *
  *   QUEUED ──► RUNNING ──► SUCCEEDED        (happy path)
+ *      │          │  ├────► PAUSED          ─► RUNNING   (human suspend ↔ resume)
  *      │          │  ├────► AWAITING_REVIEW ─► RUNNING | SUCCEEDED
  *      │          │  ├────► AWAITING_INPUT  ─► RUNNING
  *      │          │  └────► BLOCKED         ─► RUNNING
@@ -27,6 +28,7 @@ const TERMINAL: ReadonlySet<RunStatus> = new Set([
 const LEGAL: Readonly<Record<RunStatus, readonly RunStatus[]>> = {
   [RunStatus.QUEUED]: [RunStatus.RUNNING, RunStatus.FAILED, RunStatus.CANCELLED],
   [RunStatus.RUNNING]: [
+    RunStatus.PAUSED,
     RunStatus.AWAITING_REVIEW,
     RunStatus.AWAITING_INPUT,
     RunStatus.BLOCKED,
@@ -34,6 +36,9 @@ const LEGAL: Readonly<Record<RunStatus, readonly RunStatus[]>> = {
     RunStatus.FAILED,
     RunStatus.CANCELLED,
   ],
+  // PAUSED is a human-held suspend: resume back to RUNNING, or tear down
+  // (CANCELLED by a human, FAILED if the holding process restarts — see reaper).
+  [RunStatus.PAUSED]: [RunStatus.RUNNING, RunStatus.CANCELLED, RunStatus.FAILED],
   [RunStatus.AWAITING_REVIEW]: [RunStatus.RUNNING, RunStatus.SUCCEEDED, RunStatus.FAILED, RunStatus.CANCELLED],
   [RunStatus.AWAITING_INPUT]: [RunStatus.RUNNING, RunStatus.CANCELLED, RunStatus.FAILED],
   [RunStatus.BLOCKED]: [RunStatus.RUNNING, RunStatus.CANCELLED, RunStatus.FAILED],

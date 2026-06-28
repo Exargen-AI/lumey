@@ -128,8 +128,22 @@ Plan: [`docs/planning/ENTERPRISE-PLAN.md`](docs/planning/ENTERPRISE-PLAN.md).
   the React Query caches + shows a "● live" pill; re-mints on reconnect (the
   ticket is single-use). Verified live end-to-end (events streamed as they
   happened; ticket replay → 401).
+- **P1.2 — run pause/resume** ✅ — control follows visibility: a human can now
+  **suspend a run in place and resume it**, not just kill it. A new `PAUSED`
+  lifecycle state (`RUNNING ↔ PAUSED`) backs a **cooperative** suspend — a
+  `PauseController` parks the agentic loop at its next *turn boundary* with the
+  transcript + sandbox kept alive in memory, so resume continues exactly where it
+  left off (a cancel still wins over a pause, so it never strands the loop).
+  Orchestrator `pauseRun`/`resumeRun` flip the loop flag then move the DB
+  (RUNNING-first on resume, so every later transition stays legal); guarded to a
+  run that is RUNNING, **in-flight on this server**, and on a runtime that can
+  suspend (the fire-and-forget `reference` adapter declines). The boot reaper now
+  also fails interrupted `PAUSED` runs (their state is in-memory only). Wired
+  through the SDK enum + Python, and the FE (Pause/Resume buttons + a "Paused"
+  pill). Verified by mock-model loop tests (parks → resumes; cancel beats pause)
+  + lifecycle/orchestrator/reaper units.
 
 ## Health (current)
 
-1124 backend tests + 39 SDK tests green · typecheck clean (backend + frontend +
+1141 backend tests + 39 SDK tests green · typecheck clean (backend + frontend +
 sdk) · zero dead exports · green at every commit.

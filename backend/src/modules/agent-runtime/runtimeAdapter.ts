@@ -57,4 +57,15 @@ export interface RuntimeAdapter {
 
   /** Best-effort cancel of an in-flight run. */
   cancel(runId: string): Promise<void>;
+
+  /**
+   * Cooperatively suspend an in-flight run at its next turn boundary, keeping
+   * its work alive for {@link resume}. Optional: a runtime that cannot suspend
+   * mid-run (e.g. the fire-and-forget reference simulator) omits it, and the
+   * orchestrator refuses the pause rather than faking one.
+   */
+  pause?(runId: string): Promise<void>;
+
+  /** Resume a run previously {@link pause}d. Optional, paired with `pause`. */
+  resume?(runId: string): Promise<void>;
 }

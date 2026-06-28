@@ -40,10 +40,22 @@ describe('runLifecycle', () => {
     expect(canTransition(RunStatus.AWAITING_REVIEW, RunStatus.SUCCEEDED)).toBe(true);
   });
 
+  it('allows a human suspend/resume (RUNNING ↔ PAUSED) and keeps PAUSED non-terminal', () => {
+    expect(canTransition(RunStatus.RUNNING, RunStatus.PAUSED)).toBe(true);
+    expect(canTransition(RunStatus.PAUSED, RunStatus.RUNNING)).toBe(true);
+    expect(isTerminal(RunStatus.PAUSED)).toBe(false);
+    // A paused run can still be torn down, but cannot skip straight to done.
+    expect(canTransition(RunStatus.PAUSED, RunStatus.CANCELLED)).toBe(true);
+    expect(canTransition(RunStatus.PAUSED, RunStatus.FAILED)).toBe(true);
+    expect(canTransition(RunStatus.PAUSED, RunStatus.SUCCEEDED)).toBe(false);
+    expect(canTransition(RunStatus.PAUSED, RunStatus.AWAITING_REVIEW)).toBe(false);
+  });
+
   it('allows cancellation from any non-terminal state', () => {
     for (const s of [
       RunStatus.QUEUED,
       RunStatus.RUNNING,
+      RunStatus.PAUSED,
       RunStatus.AWAITING_REVIEW,
       RunStatus.AWAITING_INPUT,
       RunStatus.BLOCKED,

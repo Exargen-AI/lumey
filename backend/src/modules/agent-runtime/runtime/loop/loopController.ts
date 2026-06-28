@@ -23,6 +23,7 @@ import type { ToolRunner } from '../tools/toolRunner';
 import type { ToolResult } from '../tools/types';
 import type { ContextEngine } from '../context/contextEngine';
 import type { Sandbox } from '../sandbox/sandbox';
+import type { PauseController } from './pauseController';
 
 export interface RunUsage {
   readonly inputTokens: number;
@@ -63,6 +64,11 @@ export interface LoopDeps {
   readonly recorder: RunRecorder;
   readonly budget?: LoopBudget;
   readonly signal?: AbortSignal;
+  /**
+   * When set, the loop parks at each turn boundary while the controller is
+   * paused — a human suspend/resume that keeps the transcript + sandbox alive.
+   */
+  readonly pause?: PauseController;
   /** When set, grade the final result and revise on failure (Outcomes). */
   readonly grader?: Grader;
   /** Max grade→revise cycles before handing off to a human. Default 2. */
@@ -115,6 +121,11 @@ export class LoopController {
     let revisions = 0;
 
     while (turns < this.maxSteps) {
+      if (this.aborted()) return this.finishCancelled(turns, usage);
+      // Turn boundary: if a human has paused this run, park here (transcript and
+      // sandbox stay live) until resumed — or until a cancel aborts the wait,
+      // which the abort re-check below then turns into a clean CANCELLED.
+      await this.d.pause?.waitWhilePaused(this.d.signal);
       if (this.aborted()) return this.finishCancelled(turns, usage);
       turns++;
 
