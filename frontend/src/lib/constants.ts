@@ -154,6 +154,9 @@ export const SIDEBAR_NAV = {
     { label: 'Dashboard', path: '/dashboard', icon: 'LayoutDashboard', permission: 'analytics.view_portfolio' },
     { label: 'Today', path: '/today', icon: 'Sunrise' },
     { label: 'Triage', path: '/inbox', icon: 'Inbox', permission: 'analytics.view_portfolio' },
+    // HITL agent inbox — runs waiting on a human (questions + approvals). Empty
+    // for viewers who can't see agents, so it's harmless to show broadly.
+    { label: 'Agent Inbox', path: '/agent-inbox', icon: 'Bot' },
     // Admins/super-admins also get assigned tasks (PR triage tasks etc.) and
     // need a place to find them. Team feedback #3.
     { label: 'My Tasks', path: '/my-tasks', icon: 'CheckSquare' },

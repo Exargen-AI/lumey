@@ -178,8 +178,19 @@ module guide: [`docs/modules/HUMAN-IN-THE-LOOP.md`](docs/modules/HUMAN-IN-THE-LO
   reason) on the run card, live. Verified by mock-model loop tests (approve→runs;
   reject→refuses + feeds reason back; cancel-while-waiting→CANCELLED) +
   service/orchestrator units; backend boots with the routes registered.
+- **P2.3 — HITL Inbox** ✅ — the cross-task view that makes the collaboration loop
+  usable at team scale: one place listing **every run waiting on a human** —
+  PENDING clarifications *and* approvals — oldest-wait first, each with its
+  project/task context and an inline action (answer / approve / reject). Backend
+  `runInbox.service` + `GET /api/v1/inbox`, scoped server-side to what the viewer
+  may see (agent work → gated by the agent-visibility allowlist, then by
+  `project.view_all` or project membership). FE `/agent-inbox` page + a sidebar
+  entry; acting resumes the run and drops the item. Verified by service units
+  (visibility gate, oldest-first merge, project scoping) + **live in the browser**
+  (real data: the date-library question + the `open_pr` approval, both
+  actionable). First feature shown via the new local-demo loop.
 
 ## Health (current)
 
-1178 backend tests + 39 SDK tests green · typecheck clean (backend + frontend +
+1182 backend tests + 39 SDK tests green · typecheck clean (backend + frontend +
 sdk) · zero dead exports · green at every commit.

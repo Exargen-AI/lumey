@@ -444,7 +444,9 @@ no model code changes needed for this backlog.
       (cooperative `PauseController` parks the loop at a turn boundary). ✅ P1.2
 - [x] `runClarification.service` + `ask_human` control tool + `ClarificationController`
       (parks AWAITING_INPUT, resumes with the answer) + `GET .../clarifications` +
-      `POST …/clarifications/:id/answer`. ✅ P2.1 *(global `GET /inbox` still to come.)*
+      `POST …/clarifications/:id/answer`. ✅ P2.1
+- [x] `runInbox.service` + `GET /api/v1/inbox` — cross-task list of every run
+      waiting on a human (clarifications + approvals), visibility-scoped. ✅ P2.3
 - [x] `runApproval.service` + approval gate in the loop's per-call execution
       (default-gates `open_pr`, env `LUMEY_APPROVAL_TOOLS`) +
       `POST …/approvals/:id/(approve|reject)`. ✅ P2.2
@@ -470,7 +472,9 @@ no model code changes needed for this backlog.
 - [x] `RunsSection` → `EventSource` live trace (✅ P1.1) + Pause/Resume/Cancel
       buttons + "Paused" pill (✅ P1.2). *(token/cost meter still to come.)*
 - [x] In-run clarification answer box + approval Approve/Reject panel in
-      `RunsSection` (live). ✅ P2.1/P2.2 *(global `InboxPage` still to come.)*
+      `RunsSection` (live). ✅ P2.1/P2.2
+- [x] `InboxPage` (`/agent-inbox`) — cross-task HITL inbox with inline answer +
+      approve/reject + a sidebar entry. ✅ P2.3 *(SLA/escalation + count badge still to come.)*
 - [ ] Run PR/check **pipeline strip** on the task card.
 - [ ] `AgentOpsPage` (admin) — runs list + filter/search + drill to live replay.
 - [ ] (Phase-4) `PolicyPage` skeleton.

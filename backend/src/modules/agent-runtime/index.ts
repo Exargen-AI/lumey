@@ -5,11 +5,15 @@
  * will call already exists (`services/agentRun.service`).
  */
 import runRoutes from './agentRun.routes';
+import inboxRoutes from './inbox.routes';
 import type { ModuleManifest } from '../../kernel';
 
 export const agentRuntimeModule: ModuleManifest = {
   id: 'agent-runtime',
   version: '1.0.0',
   entitlement: 'agent-runtime',
-  routes: [{ path: '/api/v1', router: runRoutes }],
+  routes: [
+    { path: '/api/v1', router: runRoutes },
+    { path: '/api/v1', router: inboxRoutes },
+  ],
 };

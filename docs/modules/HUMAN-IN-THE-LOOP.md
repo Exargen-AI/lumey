@@ -73,6 +73,18 @@ path). `POST …/approvals/:id/{approve,reject}` wakes the loop then persists th
 decision. The gate lives in the `LoopController`'s per-call execution (`runTools`),
 so any tool can be gated, not just PRs.
 
+## P2.3 — HITL Inbox (cross-task view)
+
+One place that lists **every run waiting on a human** — PENDING clarifications +
+PENDING approvals — across all tasks, oldest-wait first, each with project/task
+context and an inline action. `runInbox.service.listInboxItems(viewer)` merges
+the two queues; `GET /api/v1/inbox` exposes it. Visibility is enforced
+server-side: runs are agent work, so a viewer who can't see agents gets an empty
+list, and everyone else is scoped to `project.view_all` or their project
+memberships. FE: the `/agent-inbox` page + a sidebar entry; answering/deciding
+resumes the run and drops the item. This is what makes the collaboration loop
+usable at team scale — a blocked run is visible without opening its task.
+
 ## Data model
 
 | Model | Purpose |
@@ -112,6 +124,7 @@ Validated centrally in `lib/runLifecycle.ts`.
 | POST | `…/runs/:runId/clarifications/:id/answer` | answer a question |
 | GET | `…/runs/:runId/approvals` | the run's checkpoints |
 | POST | `…/runs/:runId/approvals/:id/approve` · `…/reject` | decide a checkpoint |
+| GET | `/api/v1/inbox` | every run awaiting *this viewer's* decision (cross-task) |
 
 Reads are `taskAccess`-gated; writes additionally require `task.edit_*` (same as
 dispatch/cancel).
@@ -131,8 +144,9 @@ integration (pause→resume, ask→answer→resume, approve→run, reject→refu
 cancel-while-waiting → CANCELLED); `runClarification`/`runApproval` service units;
 `runOrchestrator` guard + wake-order units; reaper covers the interrupted states.
 
-## Not yet built (Phase 2 remainder → later phases)
+## Not yet built (later phases)
 
-A global **HITL inbox** (`GET /inbox` across tasks), `request_approval` as an
-explicit agent tool (today approval is auto-gated by tool name), SLA/escalation,
-and durable park-across-restart.
+`request_approval` as an explicit agent tool (today approval is auto-gated by tool
+name), inbox SLA/escalation + a count badge, and durable park-across-restart
+(persist the transcript so a paused/parked run survives a server restart instead
+of being reaped).

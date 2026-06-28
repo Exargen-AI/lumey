@@ -25,6 +25,7 @@ import { UserManagementPage } from '@/pages/admin/UserManagementPage';
 import { RBACPage } from '@/pages/admin/RBACPage';
 import { SystemSettingsPage } from '@/pages/admin/SystemSettingsPage';
 import { StandupViewPage } from '@/pages/admin/StandupViewPage';
+import { InboxPage } from '@/pages/InboxPage';
 
 // PM pages
 import { PMDashboardPage } from '@/pages/pm/DashboardPage';
@@ -105,6 +106,8 @@ export function App() {
               access; the page itself uses product.view via the API gate. */}
           <Route path="/projects/:id/products/:productId" element={<ProductDetailPage />} />
           <Route path="/projects/:projectId/tasks/:taskId" element={<TaskDetailPage />} />
+          {/* HITL agent inbox — every run waiting on a human (questions + approvals). */}
+          <Route path="/agent-inbox" element={<InboxPage />} />
           <Route path="/timeline" element={<TimelinePage />} />
           {/* Admin/super-admin "My Tasks" — same component as engineers,
               role-aware navigation built in. Team feedback #3. */}
