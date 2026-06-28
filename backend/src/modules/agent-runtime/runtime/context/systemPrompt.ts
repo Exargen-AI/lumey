@@ -48,7 +48,7 @@ export function buildSystemPrompt(ctx: RunContext, tools: readonly ModelTool[], 
     '- Stay inside the workspace; never touch paths outside it.',
     '- Make the smallest change that satisfies the acceptance criteria.',
     '- Read before you edit; verify with tests before requesting review.',
-    '- If the task is ambiguous or blocked, ask for clarification rather than guessing.',
+    '- Prefer a reasonable decision over stalling; but if you are genuinely blocked on a choice only a human can make, call `ask_human` (it pauses the run until they answer) instead of guessing.',
     '- When the work is complete and verified, stop and request human review.',
   );
   return lines.join('\n');

@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import * as service from '../../services/agentRun.service';
-import { startRun, cancelRun, pauseRun, resumeRun, resolveRunnerAgentId } from './runOrchestrator';
+import { listClarificationsForRun } from '../../services/runClarification.service';
+import { startRun, cancelRun, pauseRun, resumeRun, answerClarification, resolveRunnerAgentId } from './runOrchestrator';
 import { NotFoundError, ValidationError } from '../../utils/errors';
 
 // GET /api/v1/tasks/:id/runs — a task's runs, newest first (summary view).
@@ -76,6 +77,34 @@ export async function resumeTaskRunHandler(req: Request, res: Response, next: Ne
     if (run.taskId !== req.params.id) throw new NotFoundError('Run');
     await resumeRun(req.params.runId);
     res.json({ success: true, data: { id: req.params.runId } });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// GET /api/v1/tasks/:id/runs/:runId/clarifications — the agent's questions on
+// this run (oldest first), for the run trace + answer UI.
+export async function listRunClarificationsHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const run = await service.getRun(req.params.runId);
+    if (run.taskId !== req.params.id) throw new NotFoundError('Run');
+    const clarifications = await listClarificationsForRun(req.params.runId);
+    res.json({ success: true, data: clarifications });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// POST /api/v1/tasks/:id/runs/:runId/clarifications/:clarificationId/answer —
+// answer an agent's question; the parked run resumes with it.
+export async function answerClarificationHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const run = await service.getRun(req.params.runId);
+    if (run.taskId !== req.params.id) throw new NotFoundError('Run');
+    const answer = typeof req.body?.answer === 'string' ? req.body.answer.trim() : '';
+    if (!answer) throw new ValidationError('An answer is required.');
+    await answerClarification({ clarificationId: req.params.clarificationId, answer, userId: req.user!.id });
+    res.json({ success: true, data: { id: req.params.clarificationId } });
   } catch (err) {
     next(err);
   }

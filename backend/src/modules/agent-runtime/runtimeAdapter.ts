@@ -68,4 +68,12 @@ export interface RuntimeAdapter {
 
   /** Resume a run previously {@link pause}d. Optional, paired with `pause`. */
   resume?(runId: string): Promise<void>;
+
+  /**
+   * Deliver a human's answer to a run parked on AWAITING_INPUT (the agent asked
+   * via `ask_human`). Returns `true` if a live loop was waiting and consumed it,
+   * `false` otherwise (e.g. the run isn't executing here). Optional: only a
+   * runtime that supports the clarification round-trip implements it.
+   */
+  answerClarification?(runId: string, answer: string): Promise<boolean>;
 }

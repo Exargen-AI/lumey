@@ -64,13 +64,13 @@ describe('failInterruptedRuns', () => {
     expect(transitionRunSpy).toHaveBeenCalledWith('b', RunStatus.FAILED, expect.anything());
   });
 
-  it('also reaps PAUSED runs (their in-memory transcript is lost on restart)', async () => {
+  it('also reaps PAUSED and AWAITING_INPUT runs (their in-memory state is lost on restart)', async () => {
     prismaMock.agentRun.findMany.mockResolvedValue([{ id: 'p' }] as never);
     await failInterruptedRuns();
-    // the query must target both live states, not RUNNING alone
+    // the query must target every in-memory-held live state, not RUNNING alone
     expect(prismaMock.agentRun.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { status: { in: [RunStatus.RUNNING, RunStatus.PAUSED] } },
+        where: { status: { in: [RunStatus.RUNNING, RunStatus.PAUSED, RunStatus.AWAITING_INPUT] } },
       }),
     );
   });

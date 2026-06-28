@@ -12,6 +12,7 @@ import {
   Terminal,
   Wrench,
   Radio,
+  MessageCircleQuestion,
 } from 'lucide-react';
 import { Button } from '@/components/ui';
 import {
@@ -21,6 +22,8 @@ import {
   useCancelTaskRun,
   usePauseTaskRun,
   useResumeTaskRun,
+  useRunClarifications,
+  useAnswerClarification,
 } from '@/hooks/useAgentRuns';
 import { useRunStream } from '@/hooks/useRunStream';
 import type { RunStatus, AgentRunSummary } from '@/api/agentRuns';
@@ -57,6 +60,55 @@ function StatusPill({ status }: { status: RunStatus }) {
       <span className={cn('h-1.5 w-1.5 rounded-full', s.dot)} />
       {s.label}
     </span>
+  );
+}
+
+/**
+ * The agent's open question, with an answer box. Shown when a run is parked on
+ * AWAITING_INPUT: the agent called `ask_human`, and sending an answer resumes
+ * the run live. Only one question is ever open at a time (the loop parks the
+ * instant it asks), so we surface the first PENDING one.
+ */
+function ClarificationPanel({ taskId, runId }: { taskId: string; runId: string }) {
+  const { data: clarifications } = useRunClarifications(taskId, runId, { enabled: true });
+  const answer = useAnswerClarification(taskId, runId);
+  const [text, setText] = useState('');
+  const pending = clarifications?.find((c) => c.status === 'PENDING');
+  if (!pending) return null;
+
+  const send = () => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    answer.mutate({ clarificationId: pending.id, answer: trimmed }, { onSuccess: () => setText('') });
+  };
+
+  return (
+    <div className="mt-2 rounded-md border border-amber-300/70 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/[0.08] p-2.5">
+      <div className="flex items-start gap-2">
+        <MessageCircleQuestion size={14} className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
+        <div className="min-w-0 flex-1">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-amber-600 dark:text-amber-400">
+            Agent needs your input
+          </p>
+          <p className="mt-0.5 whitespace-pre-wrap text-[12px] text-gray-800 dark:text-obsidian-fg">{pending.question}</p>
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') send();
+            }}
+            rows={2}
+            placeholder="Type your answer… (⌘/Ctrl+Enter to send)"
+            className="mt-2 w-full resize-y rounded border border-gray-200 dark:border-obsidian-border bg-white dark:bg-obsidian-base px-2 py-1.5 text-[12px] text-gray-800 dark:text-obsidian-fg placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-amber-400"
+          />
+          <div className="mt-1.5 flex justify-end">
+            <Button size="xs" variant="primary" loading={answer.isPending} disabled={!text.trim()} onClick={send}>
+              Send answer
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -130,6 +182,7 @@ function RunRow({
                   {detail.summary}
                 </p>
               )}
+              {shownStatus === 'AWAITING_INPUT' && <ClarificationPanel taskId={taskId} runId={run.id} />}
               {active && (
                 <div className="mt-2 flex items-center gap-2">
                   {shownStatus === 'RUNNING' && (

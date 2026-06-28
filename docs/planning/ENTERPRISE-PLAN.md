@@ -430,7 +430,8 @@ no model code changes needed for this backlog.
 
 ### Schema
 - [x] `RunStatus += PAUSED` + lifecycle edges (RUNNING↔PAUSED) in `runLifecycle.ts`. ✅ P1.2
-- [ ] `RunClarificationRequest`, `RunApprovalRequest` models + migration.
+- [x] `RunClarificationRequest` model + `ClarificationStatus` enum + migration. ✅ P2.1
+      *(`RunApprovalRequest` still to come.)*
 - [ ] `RunPullRequest`, `RunCheck`, `RunCommit`, `RunArtifact` models + migration.
 - [ ] `Activity.actorType` enum column + backfill default `HUMAN`.
 - [ ] `AgentPolicy`, `Budget`, `RunReceipt` models + migration (Phase-4 slice).
@@ -442,7 +443,9 @@ no model code changes needed for this backlog.
       bus facts). ✅ P1.1
 - [x] `pauseRun`/`resumeRun` in `runOrchestrator.ts` + `POST .../pause|resume`
       (cooperative `PauseController` parks the loop at a turn boundary). ✅ P1.2
-- [ ] `runClarification.service` + `POST /clarifications/:id/answer`; `GET /inbox`.
+- [x] `runClarification.service` + `ask_human` control tool + `ClarificationController`
+      (parks AWAITING_INPUT, resumes with the answer) + `GET .../clarifications` +
+      `POST …/clarifications/:id/answer`. ✅ P2.1 *(global `GET /inbox` still to come.)*
 - [ ] `runApproval.service` + approval gate in the `open_pr` finalize path +
       `POST /approvals/:id/(approve|reject)`.
 - [ ] Extend `githubIntegration.service.ts`: ingest `check_run` → `RunCheck`;
@@ -451,10 +454,10 @@ no model code changes needed for this backlog.
 - [ ] `actorType` written by `activity.service` (resolve from `req.user.userType`).
 
 ### Runtime
-- [ ] `LoopController` honors `shouldPause()` between turns (cooperative, reuse the
-      abort plumbing).
-- [ ] `request_clarification` + `request_approval` tools in `runtime/tools/`;
-      adapter routes risky actions through the approval gate.
+- [x] `LoopController` honors a pause check between turns (cooperative, reuses the
+      abort plumbing). ✅ P1.2
+- [x] `ask_human` control tool in `runtime/tools/` — the loop intercepts it and
+      parks AWAITING_INPUT. ✅ P2.1 *(`request_approval` + approval gate still to come.)*
 - [ ] Native adapter populates `RunCommit`/`RunPullRequest`/`RunArtifact` from
       `git_commit`/`open_pr` results.
 - [ ] Emit a `RunReceipt` on terminal in the native adapter.
@@ -464,7 +467,8 @@ no model code changes needed for this backlog.
 ### Frontend
 - [x] `RunsSection` → `EventSource` live trace (✅ P1.1) + Pause/Resume/Cancel
       buttons + "Paused" pill (✅ P1.2). *(token/cost meter still to come.)*
-- [ ] `InboxPage` (extend `TriageInboxPage`): clarification answer + approval modals.
+- [x] In-run clarification answer box in `RunsSection` (the agent's question +
+      inline answer, live). ✅ P2.1 *(global `InboxPage` + approval modals still to come.)*
 - [ ] Run PR/check **pipeline strip** on the task card.
 - [ ] `AgentOpsPage` (admin) — runs list + filter/search + drill to live replay.
 - [ ] (Phase-4) `PolicyPage` skeleton.
@@ -474,7 +478,8 @@ no model code changes needed for this backlog.
       TTL). ✅ P1.1 *(reconnect-from-cursor still to come.)*
 - [x] pause→resume resumes the live transcript (mock-model loop parks then
       continues; cancel beats pause); lifecycle edge validation. ✅ P1.2
-- [ ] clarification round-trip; approval blocks `open_pr` until approved.
+- [x] clarification round-trip (ask → park AWAITING_INPUT → answer → resume;
+      cancel-while-waiting → CANCELLED). ✅ P2.1 *(approval gate still to come.)*
 - [ ] `check_run` webhook → `RunCheck` attach; graph assembly; idempotent replay.
 - [ ] `actorType` recorded for agent vs human actions; RunReceipt completeness.
 

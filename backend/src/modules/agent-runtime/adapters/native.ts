@@ -25,6 +25,9 @@ import { isTerminal } from '../../../lib/runLifecycle';
 import type { RuntimeAdapter, RunContext } from '../runtimeAdapter';
 import { LoopController, type LoopBudget, type RunRecorder, type Grader } from '../runtime/loop/loopController';
 import { PauseController } from '../runtime/loop/pauseController';
+import { ClarificationController } from '../runtime/loop/clarificationController';
+import { askHumanTool } from '../runtime/tools/askHuman';
+import { createClarification, cancelOpenClarificationsForRun } from '../../../services/runClarification.service';
 import { ContextEngine } from '../runtime/context/contextEngine';
 import { buildSystemPrompt } from '../runtime/context/systemPrompt';
 import { ToolRunner } from '../runtime/tools/toolRunner';
@@ -164,6 +167,7 @@ async function defaultRunTools(ctx: RunContext, sandbox: Sandbox, model: ModelCl
   const { provider, base } = await resolveGitProviderAndBase(ctx, sandbox);
   return new ToolRunner([
     ...defaultTools(),
+    askHumanTool, // HITL: the lead may ask a human and park (loop-intercepted)
     createRunTestsTool({ command: process.env.LUMEY_TEST_CMD }),
     createGitCommitTool({ branch }),
     createOpenPrTool({
@@ -268,6 +272,9 @@ export function createNativeAdapter(deps: NativeAdapterDeps): RuntimeAdapter {
   // and resume() reach the *live* loop through this; the orchestrator owns the
   // matching DB transition.
   const pauses = new Map<string, PauseController>();
+  // One clarification rendezvous per in-flight run — the channel a human's
+  // answer travels to reach the parked loop.
+  const clarifyGates = new Map<string, ClarificationController>();
 
   return {
     id: 'native',
@@ -284,6 +291,8 @@ export function createNativeAdapter(deps: NativeAdapterDeps): RuntimeAdapter {
       inflight.set(ctx.runId, controller);
       const pause = new PauseController();
       pauses.set(ctx.runId, pause);
+      const clarifyGate = new ClarificationController();
+      clarifyGates.set(ctx.runId, clarifyGate);
       let sandbox: Sandbox | undefined;
       try {
         const model = deps.modelFactory(); // throws if no model configured
@@ -302,6 +311,12 @@ export function createNativeAdapter(deps: NativeAdapterDeps): RuntimeAdapter {
           budget: deps.budget,
           signal: controller.signal,
           pause, // honour human suspend/resume at turn boundaries
+          // HITL: persist the question, then park on the in-memory gate until a
+          // human answers (or the run is cancelled, which resolves null).
+          clarify: async (question, signal) => {
+            await createClarification({ runId: ctx.runId, taskId: ctx.taskId, question });
+            return clarifyGate.wait(signal);
+          },
 
           // Outcomes: grade the result vs acceptance criteria and revise on fail.
           grader: hasAcceptanceCriteria(ctx.task.acceptanceCriteria) ? modelGrader(model, ctx) : undefined,
@@ -317,6 +332,10 @@ export function createNativeAdapter(deps: NativeAdapterDeps): RuntimeAdapter {
       } finally {
         inflight.delete(ctx.runId);
         pauses.delete(ctx.runId);
+        clarifyGates.delete(ctx.runId);
+        // Close any question still open when the run stops (e.g. cancelled while
+        // waiting) so the trace/inbox never shows a live question on a dead run.
+        await cancelOpenClarificationsForRun(ctx.runId).catch(() => undefined);
         if (sandbox) await sandbox.dispose();
       }
     },
@@ -345,6 +364,12 @@ export function createNativeAdapter(deps: NativeAdapterDeps): RuntimeAdapter {
 
     async resume(runId) {
       pauses.get(runId)?.resume();
+    },
+
+    // Deliver a human's answer to the parked loop. Returns false if no loop is
+    // actually waiting (so the orchestrator can report that honestly).
+    async answerClarification(runId, answer) {
+      return clarifyGates.get(runId)?.answer(answer) ?? false;
     },
   };
 }

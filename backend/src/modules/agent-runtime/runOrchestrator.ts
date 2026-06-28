@@ -5,9 +5,10 @@
  * runtime-neutral; the adapter does the real work behind the seam.
  */
 import prisma from '../../config/database';
-import { RunStatus, UserType } from '@prisma/client';
+import { ClarificationStatus, RunStatus, UserType } from '@prisma/client';
 import { NotFoundError, ValidationError } from '../../utils/errors';
 import { createRun, transitionRun } from '../../services/agentRun.service';
+import { recordClarificationAnswer } from '../../services/runClarification.service';
 import { isTerminal } from '../../lib/runLifecycle';
 import { getAdapter, DEFAULT_ADAPTER_ID } from './adapterRegistry';
 import { dispatchRun, isRunInflight } from './runExecutor';
@@ -120,6 +121,38 @@ export async function resumeRun(runId: string) {
   await transitionRun(runId, RunStatus.RUNNING, { summary: 'Run resumed by a human.' });
   await adapter.resume(runId);
   return null;
+}
+
+/**
+ * Answer a clarification the agent raised mid-run. We wake the parked loop
+ * **first** (so it transitions AWAITING_INPUT→RUNNING and resumes with the
+ * answer), then persist the answer — if the loop turns out not to be waiting
+ * (a race, or the run isn't executing here) we reject *before* writing, leaving
+ * the question PENDING for a retry rather than marking it answered on a dead run.
+ */
+export async function answerClarification(input: { clarificationId: string; answer: string; userId: string }) {
+  const clarification = await prisma.runClarificationRequest.findUnique({
+    where: { id: input.clarificationId },
+    select: { status: true, runId: true, run: { select: { status: true, adapterId: true } } },
+  });
+  if (!clarification) throw new NotFoundError('Clarification');
+  if (clarification.status !== ClarificationStatus.PENDING) {
+    throw new ValidationError(`This clarification is already ${clarification.status.toLowerCase()}.`);
+  }
+  if (clarification.run.status !== RunStatus.AWAITING_INPUT) {
+    throw new ValidationError(`This run is not awaiting input (it is ${clarification.run.status}).`);
+  }
+
+  const adapter = getAdapter(clarification.run.adapterId);
+  if (!adapter.answerClarification || !isRunInflight(clarification.runId)) {
+    throw new ValidationError('This run is no longer waiting for an answer on this server.');
+  }
+  const woke = await adapter.answerClarification(clarification.runId, input.answer);
+  if (!woke) {
+    throw new ValidationError('This run is not currently waiting for an answer.');
+  }
+
+  return recordClarificationAnswer(input);
 }
 
 /**

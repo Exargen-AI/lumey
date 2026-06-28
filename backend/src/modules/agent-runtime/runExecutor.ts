@@ -9,15 +9,17 @@
  *     is caught, logged, and the run is forced to FAILED, so it never hangs in
  *     QUEUED/RUNNING.
  *   - **Restart recovery** — `failInterruptedRuns()` (run at boot) fails any run
- *     left RUNNING *or PAUSED* by a previous process, since in-process execution
- *     (and a paused run's in-memory transcript/sandbox) doesn't survive a
- *     restart. (A durable job queue is the eventual home; this keeps state honest
- *     in the meantime.)
+ *     left RUNNING, PAUSED, *or AWAITING_INPUT* by a previous process: in-process
+ *     execution (and a paused/clarification-parked run's in-memory
+ *     transcript/sandbox) doesn't survive a restart. Open questions on those runs
+ *     are cancelled too. (A durable job queue is the eventual home; this keeps
+ *     state honest in the meantime.)
  */
 import { RunStatus } from '@prisma/client';
 import prisma from '../../config/database';
 import { logger } from '../../lib/logger';
 import { transitionRun } from '../../services/agentRun.service';
+import { cancelOpenClarificationsForRun } from '../../services/runClarification.service';
 import { isTerminal } from '../../lib/runLifecycle';
 import type { RuntimeAdapter, RunContext } from './runtimeAdapter';
 
@@ -57,18 +59,20 @@ async function forceFail(runId: string, err: unknown): Promise<void> {
 }
 
 /**
- * Fail runs left RUNNING or PAUSED by a dead process (neither in-process
- * execution nor a paused run's in-memory state survives a restart). Call once at
- * startup. Returns the number reaped.
+ * Fail runs left RUNNING, PAUSED, or AWAITING_INPUT by a dead process (none of
+ * in-process execution, a paused run's in-memory state, nor a clarification-
+ * parked loop survives a restart) and cancel any questions still open on them.
+ * Call once at startup. Returns the number reaped.
  */
 export async function failInterruptedRuns(): Promise<number> {
   const stale = await prisma.agentRun.findMany({
-    where: { status: { in: [RunStatus.RUNNING, RunStatus.PAUSED] } },
+    where: { status: { in: [RunStatus.RUNNING, RunStatus.PAUSED, RunStatus.AWAITING_INPUT] } },
     select: { id: true },
   });
   let reaped = 0;
   for (const run of stale) {
     await transitionRun(run.id, RunStatus.FAILED, { error: 'Run interrupted by a server restart.' }).catch(() => undefined);
+    await cancelOpenClarificationsForRun(run.id).catch(() => undefined);
     reaped += 1;
   }
   if (reaped > 0) logger.warn({ reaped }, '[agent-runtime] failed interrupted runs at startup');

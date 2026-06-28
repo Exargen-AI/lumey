@@ -22,7 +22,17 @@ vi.mock('./runExecutor', async (orig) => ({
   isRunInflight: isRunInflightSpy,
 }));
 
-import { startRun, cancelRun, pauseRun, resumeRun, resolveRunnerAgentId } from './runOrchestrator';
+// answerClarification persists via the clarification service — stub it so the
+// orchestrator test stays on the wake-the-loop + guard logic.
+const { recordAnswerSpy } = vi.hoisted(() => ({
+  recordAnswerSpy: vi.fn().mockResolvedValue({ runId: 'r1', taskId: 't1' }),
+}));
+vi.mock('../../services/runClarification.service', async (orig) => ({
+  ...(await orig<Record<string, unknown>>()),
+  recordClarificationAnswer: recordAnswerSpy,
+}));
+
+import { startRun, cancelRun, pauseRun, resumeRun, answerClarification, resolveRunnerAgentId } from './runOrchestrator';
 import { referenceAdapter } from './adapters/reference';
 import { nativeAdapter } from './adapters/native';
 import type { RuntimeAdapter } from './runtimeAdapter';
@@ -153,6 +163,61 @@ describe('resumeRun', () => {
   it('refuses to resume a run that is not PAUSED', async () => {
     prismaMock.agentRun.findUnique.mockResolvedValue({ status: 'RUNNING', adapterId: 'native' } as never);
     await expect(resumeRun('r1')).rejects.toBeInstanceOf(ValidationError);
+  });
+});
+
+describe('answerClarification', () => {
+  const pendingOnAwaitingInput = {
+    status: 'PENDING',
+    runId: 'r1',
+    run: { status: 'AWAITING_INPUT', adapterId: 'native' },
+  };
+
+  it('wakes the parked loop then persists the answer', async () => {
+    prismaMock.runClarificationRequest.findUnique.mockResolvedValue(pendingOnAwaitingInput as never);
+    const answerSpy = vi.spyOn(native, 'answerClarification').mockResolvedValue(true);
+
+    await answerClarification({ clarificationId: 'c1', answer: 'Postgres', userId: 'u1' });
+
+    expect(answerSpy).toHaveBeenCalledWith('r1', 'Postgres');
+    expect(recordAnswerSpy).toHaveBeenCalledWith({ clarificationId: 'c1', answer: 'Postgres', userId: 'u1' });
+    answerSpy.mockRestore();
+  });
+
+  it('rejects (and does not persist) when no live loop is waiting', async () => {
+    prismaMock.runClarificationRequest.findUnique.mockResolvedValue(pendingOnAwaitingInput as never);
+    const answerSpy = vi.spyOn(native, 'answerClarification').mockResolvedValue(false);
+    await expect(answerClarification({ clarificationId: 'c1', answer: 'x', userId: 'u1' }))
+      .rejects.toBeInstanceOf(ValidationError);
+    expect(recordAnswerSpy).not.toHaveBeenCalled();
+    answerSpy.mockRestore();
+  });
+
+  it('rejects a clarification that is not PENDING', async () => {
+    prismaMock.runClarificationRequest.findUnique.mockResolvedValue({ ...pendingOnAwaitingInput, status: 'ANSWERED' } as never);
+    await expect(answerClarification({ clarificationId: 'c1', answer: 'x', userId: 'u1' }))
+      .rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it('rejects when the run is not AWAITING_INPUT', async () => {
+    prismaMock.runClarificationRequest.findUnique.mockResolvedValue({
+      ...pendingOnAwaitingInput, run: { status: 'RUNNING', adapterId: 'native' },
+    } as never);
+    await expect(answerClarification({ clarificationId: 'c1', answer: 'x', userId: 'u1' }))
+      .rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it('rejects when the run is not executing on this server', async () => {
+    prismaMock.runClarificationRequest.findUnique.mockResolvedValue(pendingOnAwaitingInput as never);
+    isRunInflightSpy.mockReturnValue(false);
+    await expect(answerClarification({ clarificationId: 'c1', answer: 'x', userId: 'u1' }))
+      .rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it('throws NotFoundError for a missing clarification', async () => {
+    prismaMock.runClarificationRequest.findUnique.mockResolvedValue(null as never);
+    await expect(answerClarification({ clarificationId: 'nope', answer: 'x', userId: 'u1' }))
+      .rejects.toBeInstanceOf(NotFoundError);
   });
 });
 

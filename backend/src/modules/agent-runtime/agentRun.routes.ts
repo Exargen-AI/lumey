@@ -53,4 +53,20 @@ router.post(
   handler.resumeTaskRunHandler,
 );
 
+// HITL clarifications: read the agent's questions (visibility), and answer one
+// (a task action — same authz as dispatch/cancel).
+router.get(
+  '/tasks/:id/runs/:runId/clarifications',
+  authenticate,
+  taskAccess,
+  handler.listRunClarificationsHandler,
+);
+router.post(
+  '/tasks/:id/runs/:runId/clarifications/:clarificationId/answer',
+  authenticate,
+  taskAccess,
+  authorizeAny('task.edit_any', 'task.edit_own'),
+  handler.answerClarificationHandler,
+);
+
 export default router;

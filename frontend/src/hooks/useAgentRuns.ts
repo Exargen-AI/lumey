@@ -57,3 +57,24 @@ export function useResumeTaskRun(taskId: string) {
     },
   });
 }
+
+export function useRunClarifications(taskId: string, runId: string | null, opts: { enabled: boolean }) {
+  return useQuery({
+    queryKey: ['run-clarifications', taskId, runId],
+    queryFn: () => runApi.listRunClarifications(taskId, runId as string),
+    enabled: opts.enabled && !!taskId && !!runId,
+  });
+}
+
+export function useAnswerClarification(taskId: string, runId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { clarificationId: string; answer: string }) =>
+      runApi.answerClarification(taskId, runId, vars.clarificationId, vars.answer),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['run-clarifications', taskId, runId] });
+      qc.invalidateQueries({ queryKey: ['task-run', taskId, runId] });
+      qc.invalidateQueries({ queryKey: ['task-runs', taskId] });
+    },
+  });
+}

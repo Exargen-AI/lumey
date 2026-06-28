@@ -184,12 +184,12 @@ model User {
   updatedAt        DateTime  @updatedAt
 
   projectMemberships      ProjectMember[]
-  assignedTasks           Task[]                   @relation("TaskAssignee")
-  createdTasks            Task[]                   @relation("TaskCreator")
+  assignedTasks           Task[]                    @relation("TaskAssignee")
+  createdTasks            Task[]                    @relation("TaskCreator")
   // Tasks currently waiting on this user to review (set by the explicit
   // "Request review" action; cleared on the review decision).
-  reviewingTasks          Task[]                   @relation("TaskReviewer")
-  requestedReviews        Task[]                   @relation("TaskReviewRequester")
+  reviewingTasks          Task[]                    @relation("TaskReviewer")
+  requestedReviews        Task[]                    @relation("TaskReviewRequester")
   comments                Comment[]
   decisions               Decision[]
   statusUpdates           StatusUpdate[]
@@ -198,13 +198,14 @@ model User {
   statusChanges           TaskStatusHistory[]
   notifications           Notification[]
   projectAcknowledgments  ProjectAcknowledgment[]
-  signedOffDeliverables   Deliverable[]            @relation("DeliverableSignedOff")
+  signedOffDeliverables   Deliverable[]             @relation("DeliverableSignedOff")
   createdTaskLinks        TaskLink[]
   refreshTokens           RefreshToken[]
-  agentRuns               AgentRun[]               @relation("AgentRunAgent")
-  uploadedDocuments       ProjectDocument[]        @relation("ProjectDocumentUploader")
+  agentRuns               AgentRun[]                @relation("AgentRunAgent")
+  answeredClarifications  RunClarificationRequest[] @relation("ClarificationAnsweredBy")
+  uploadedDocuments       ProjectDocument[]         @relation("ProjectDocumentUploader")
   taskSubscriptions       TaskSubscription[]
-  sentNudges              TaskNudge[]              @relation("TaskNudgeSender")
+  sentNudges              TaskNudge[]               @relation("TaskNudgeSender")
   notificationPreferences NotificationPreference[]
   // 2026-05-23 Layer 2 / agent control plane. Cascade-delete on user
   // deletion so stale dedup rows can't outlive their owner.
@@ -1231,31 +1232,32 @@ enum RunStepStatus {
 }
 
 model AgentRun {
-  id        String    @id @default(uuid())
-  taskId    String
-  agentId   String // the agent User executing this run
-  status    RunStatus @default(QUEUED)
+  id           String    @id @default(uuid())
+  taskId       String
+  agentId      String // the agent User executing this run
+  status       RunStatus @default(QUEUED)
   // The runtime adapter that executed this run — so a cancel can reach the right
   // one to abort its in-flight (background) work.
-  adapterId String    @default("reference")
-  model     String? // model that produced the work (free-form, e.g. claude-opus-4-8)
-  summary   String?   @db.Text // agent's run summary: what / why / risks
-  error     String?   @db.Text // failure cause when status = FAILED
+  adapterId    String    @default("reference")
+  model        String? // model that produced the work (free-form, e.g. claude-opus-4-8)
+  summary      String?   @db.Text // agent's run summary: what / why / risks
+  error        String?   @db.Text // failure cause when status = FAILED
   // Token usage accumulated across the run's model turns (the loop records it on
   // finish). Cost is derived from these by consumers via a current pricing table,
   // so a stale rate is never baked into storage.
-  inputTokens  Int @default(0)
-  outputTokens Int @default(0)
-  totalTokens  Int @default(0)
-  startedAt DateTime? // first transition into RUNNING
-  endedAt   DateTime? // transition into a terminal state
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  inputTokens  Int       @default(0)
+  outputTokens Int       @default(0)
+  totalTokens  Int       @default(0)
+  startedAt    DateTime? // first transition into RUNNING
+  endedAt      DateTime? // transition into a terminal state
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
-  task   Task       @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  agent  User       @relation("AgentRunAgent", fields: [agentId], references: [id])
-  steps  RunStep[]
-  events RunEvent[]
+  task           Task                      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  agent          User                      @relation("AgentRunAgent", fields: [agentId], references: [id])
+  steps          RunStep[]
+  events         RunEvent[]
+  clarifications RunClarificationRequest[]
 
   @@index([taskId])
   @@index([agentId])
@@ -1314,4 +1316,32 @@ model RunEvent {
   @@unique([runId, seq])
   @@index([runId])
   @@map("run_events")
+}
+
+// A question the agent raised mid-run for a human to answer (HITL). The agent's
+// `ask_human` tool opens one and the run parks on AWAITING_INPUT; a human answers
+// and the loop resumes with the answer injected into its transcript. PENDING is
+// the only answerable state; a run that ends with open questions cancels them.
+enum ClarificationStatus {
+  PENDING // awaiting a human answer
+  ANSWERED // a human answered; the run consumed it and resumed
+  CANCELLED // the run ended (cancelled/failed) before this was answered
+}
+
+model RunClarificationRequest {
+  id           String              @id @default(uuid())
+  runId        String
+  question     String              @db.Text
+  answer       String?             @db.Text
+  status       ClarificationStatus @default(PENDING)
+  askedAt      DateTime            @default(now())
+  answeredAt   DateTime?
+  answeredById String? // the human (User) who answered
+
+  run        AgentRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  answeredBy User?    @relation("ClarificationAnsweredBy", fields: [answeredById], references: [id])
+
+  @@index([runId])
+  @@index([status])
+  @@map("run_clarification_requests")
 }

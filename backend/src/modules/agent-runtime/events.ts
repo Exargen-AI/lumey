@@ -32,3 +32,19 @@ export interface RunStepRecordedEvent extends DomainEvent {
   readonly stepType: string;
   readonly title: string;
 }
+
+/** Fact: the agent raised a question for a human (the run is parking on AWAITING_INPUT). */
+export interface RunClarificationRequestedEvent extends DomainEvent {
+  readonly type: 'run.clarification.requested';
+  readonly runId: string;
+  readonly taskId: string;
+  readonly clarificationId: string;
+}
+
+/** Fact: a human answered a clarification (the run is resuming). */
+export interface RunClarificationAnsweredEvent extends DomainEvent {
+  readonly type: 'run.clarification.answered';
+  readonly runId: string;
+  readonly taskId: string;
+  readonly clarificationId: string;
+}

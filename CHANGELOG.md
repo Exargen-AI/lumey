@@ -143,7 +143,28 @@ Plan: [`docs/planning/ENTERPRISE-PLAN.md`](docs/planning/ENTERPRISE-PLAN.md).
   pill). Verified by mock-model loop tests (parks → resumes; cancel beats pause)
   + lifecycle/orchestrator/reaper units.
 
+## Enterprise hardening — Phase 2 (Human-in-the-Loop)
+
+Plan: [`docs/planning/ENTERPRISE-PLAN.md`](docs/planning/ENTERPRISE-PLAN.md).
+
+- **P2.1 — clarification round-trip** ✅ — the first *two-way* collaboration: the
+  agent can **ask a human a question mid-run and continue with the answer**. A new
+  lead-only `ask_human` **control tool** is intercepted by the loop (never
+  dispatched to the sandbox): it opens a `RunClarificationRequest` (PENDING),
+  parks the run on **AWAITING_INPUT** via a `ClarificationController` (transcript
+  + sandbox alive in memory, like pause but carrying an answer back), and on a
+  human answer injects it as the tool result and resumes (AWAITING_INPUT →
+  RUNNING). The human answers over `POST …/clarifications/:id/answer`, which wakes
+  the parked loop **first** then persists ANSWERED (so a dead/raced run is
+  rejected before it's marked answered); a cancel while waiting resolves the wait
+  and finishes CANCELLED. The boot reaper now also fails interrupted
+  AWAITING_INPUT runs and cancels their open questions. FE: the run card shows the
+  agent's question with an inline answer box (live via the SSE invalidation).
+  Verified by mock-model loop tests (ask → park → answer → resume; cancel-while-
+  waiting → CANCELLED) + service/orchestrator units; backend boots with the new
+  routes registered (401/403 gated, not 404).
+
 ## Health (current)
 
-1141 backend tests + 39 SDK tests green · typecheck clean (backend + frontend +
+1159 backend tests + 39 SDK tests green · typecheck clean (backend + frontend +
 sdk) · zero dead exports · green at every commit.

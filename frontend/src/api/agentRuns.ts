@@ -80,6 +80,40 @@ export async function resumeTaskRun(taskId: string, runId: string): Promise<{ id
   return data.data;
 }
 
+export type ClarificationStatus = 'PENDING' | 'ANSWERED' | 'CANCELLED';
+
+/** A question the agent raised mid-run for a human to answer (HITL). */
+export interface RunClarification {
+  id: string;
+  runId: string;
+  question: string;
+  answer: string | null;
+  status: ClarificationStatus;
+  askedAt: string;
+  answeredAt: string | null;
+  answeredById: string | null;
+}
+
+/** The agent's questions on a run (oldest first). */
+export async function listRunClarifications(taskId: string, runId: string): Promise<RunClarification[]> {
+  const { data } = await api.get(`/tasks/${taskId}/runs/${runId}/clarifications`);
+  return data.data;
+}
+
+/** Answer an agent's question; the parked run resumes with it. */
+export async function answerClarification(
+  taskId: string,
+  runId: string,
+  clarificationId: string,
+  answer: string,
+): Promise<{ id: string }> {
+  const { data } = await api.post(
+    `/tasks/${taskId}/runs/${runId}/clarifications/${clarificationId}/answer`,
+    { answer },
+  );
+  return data.data;
+}
+
 /**
  * Mint a single-use ticket to open the live SSE trace. A browser `EventSource`
  * can't send the Bearer header, so we authenticate here (via the axios client)

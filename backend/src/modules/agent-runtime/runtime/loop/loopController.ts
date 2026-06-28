@@ -24,6 +24,7 @@ import type { ToolResult } from '../tools/types';
 import type { ContextEngine } from '../context/contextEngine';
 import type { Sandbox } from '../sandbox/sandbox';
 import type { PauseController } from './pauseController';
+import { ASK_HUMAN_TOOL } from '../tools/askHuman';
 
 export interface RunUsage {
   readonly inputTokens: number;
@@ -69,6 +70,12 @@ export interface LoopDeps {
    * paused — a human suspend/resume that keeps the transcript + sandbox alive.
    */
   readonly pause?: PauseController;
+  /**
+   * When set, the agent may call `ask_human`: the loop opens a clarification,
+   * parks the run on AWAITING_INPUT, and resumes with the returned answer
+   * injected as the tool result. Resolves `null` if cancelled while waiting.
+   */
+  readonly clarify?: (question: string, signal?: AbortSignal) => Promise<string | null>;
   /** When set, grade the final result and revise on failure (Outcomes). */
   readonly grader?: Grader;
   /** Max grade→revise cycles before handing off to a human. Default 2. */
@@ -98,6 +105,17 @@ function stepTypeForTool(name: string, args: string): RunStepType {
 function firstLine(text: string, max = 80): string {
   const line = text.trim().split('\n')[0] ?? '';
   return line.length > max ? `${line.slice(0, max)}…` : line;
+}
+
+/** Pull the `question` out of an `ask_human` call's raw JSON args, defensively. */
+function parseAskQuestion(rawArgs: string): string {
+  try {
+    const parsed = JSON.parse(rawArgs || '{}') as { question?: unknown };
+    const q = typeof parsed.question === 'string' ? parsed.question.trim() : '';
+    return q || 'The agent requested human input but provided no question.';
+  } catch {
+    return 'The agent requested human input but its question could not be parsed.';
+  }
 }
 
 export class LoopController {
@@ -176,6 +194,16 @@ export class LoopController {
         await this.d.recorder.step({ type: RunStepType.PLAN, title: firstLine(response.content), detail: response.content });
       }
 
+      // Human-in-the-loop: if the agent asked a question this turn, park on it
+      // (record it, park AWAITING_INPUT, resume with the answer) instead of
+      // dispatching tools to the sandbox.
+      const askCall = this.d.clarify ? response.toolCalls.find((c) => c.name === ASK_HUMAN_TOOL) : undefined;
+      if (askCall) {
+        const cancelled = await this.handleClarification(response.toolCalls, askCall, transcript, turns, usage);
+        if (cancelled) return cancelled;
+        continue;
+      }
+
       const results = await this.d.tools.runAll([...response.toolCalls], { sandbox: this.d.sandbox, signal: this.d.signal });
       await this.recordToolResults(response.toolCalls, results);
       results.forEach((r, i) => {
@@ -188,6 +216,45 @@ export class LoopController {
     }
 
     return this.finishAwaitingReview(turns, usage, `Reached the ${this.maxSteps}-step ceiling; handing to human for review.`);
+  }
+
+  /**
+   * Park the run on an agent-raised question. Records the ask, transitions to
+   * AWAITING_INPUT, and awaits the human answer (via the injected `clarify`
+   * gate). On answer: transitions back to RUNNING and injects the answer as the
+   * `ask_human` tool result so the model continues with it in context. On a
+   * cancel while waiting (`null`): finishes the run CANCELLED.
+   *
+   * Every tool call this turn still needs a matching result or the transcript is
+   * invalid, so any sibling calls made alongside `ask_human` are answered with a
+   * deferral note (the model re-issues them next turn).
+   */
+  private async handleClarification(
+    calls: readonly ModelToolCall[],
+    askCall: ModelToolCall,
+    transcript: ChatMessage[],
+    turns: number,
+    usage: RunUsage,
+  ): Promise<LoopOutcome | null> {
+    const question = parseAskQuestion(askCall.arguments);
+    await this.d.recorder.step({ type: RunStepType.TOOL_CALL, title: 'ask_human', detail: firstLine(question, 200) });
+    await this.d.recorder.transition(RunStatus.AWAITING_INPUT, { summary: firstLine(question, 200) });
+
+    const answer = await this.d.clarify!(question, this.d.signal);
+    if (answer === null) return this.finishCancelled(turns, usage); // cancelled while waiting
+
+    await this.d.recorder.step({ type: RunStepType.PLAN, title: 'Human answered', detail: firstLine(answer, 200) });
+    await this.d.recorder.transition(RunStatus.RUNNING);
+
+    for (const call of calls) {
+      transcript.push({
+        role: 'tool',
+        content: call === askCall ? answer : 'Deferred: a human clarification was pending. Re-issue this call now that it is answered.',
+        toolCallId: call.id,
+        name: call.name,
+      });
+    }
+    return null;
   }
 
   private async recordToolResults(calls: readonly ModelToolCall[], results: ToolResult[]): Promise<void> {

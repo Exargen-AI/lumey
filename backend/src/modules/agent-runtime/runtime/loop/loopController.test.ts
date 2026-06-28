@@ -10,6 +10,7 @@ import { ContextEngine } from '../context/contextEngine';
 import { buildSystemPrompt } from '../context/systemPrompt';
 import { ToolRunner } from '../tools/toolRunner';
 import { defaultTools } from '../tools/builtins';
+import { askHumanTool } from '../tools/askHuman';
 import { createRunTestsTool, createGitCommitTool, createOpenPrTool } from '../tools/finalize';
 import { referenceGitProvider } from '../git/referenceProvider';
 import { WorktreeSandbox } from '../sandbox/worktreeSandbox';
@@ -366,5 +367,65 @@ describe('LoopController pause/resume', () => {
 
     expect(outcome.status).toBe(RunStatus.CANCELLED); // unparked → observed the abort
     expect(model.calls).toBe(0); // never ran a turn
+  });
+});
+
+// ── clarification round-trip (ask_human → AWAITING_INPUT → answer → resume) ────
+
+describe('LoopController clarification (ask_human)', () => {
+  it('parks on AWAITING_INPUT, injects the answer, and continues', async () => {
+    // Turn 1: the agent asks. Turn 2 (after the answer): it finishes.
+    const model = new ScriptedModel([
+      callTool('q1', 'ask_human', '{"question":"Which database should I use?"}'),
+      say('Using Postgres as instructed; please review.'),
+    ]);
+    const recorder = new FakeRecorder();
+    const askTools = new ToolRunner([...defaultTools(), askHumanTool]);
+
+    let askedQuestion: string | null = null;
+    const clarify = async (question: string): Promise<string | null> => {
+      askedQuestion = question;
+      return 'Use Postgres.'; // the "human" answers immediately
+    };
+
+    const outcome = await new LoopController({
+      model, tools: askTools, context: new ContextEngine(buildSystemPrompt(CTX, askTools.list())),
+      sandbox, recorder, clarify,
+    }).run();
+
+    expect(askedQuestion).toBe('Which database should I use?');
+    expect(outcome.status).toBe(RunStatus.AWAITING_REVIEW);
+    // lifecycle: RUNNING → AWAITING_INPUT (parked) → RUNNING (resumed) → AWAITING_REVIEW
+    expect(recorder.transitions.map((t) => t.to)).toEqual([
+      RunStatus.RUNNING,
+      RunStatus.AWAITING_INPUT,
+      RunStatus.RUNNING,
+      RunStatus.AWAITING_REVIEW,
+    ]);
+    // the question is on the trace
+    expect(recorder.steps.some((s) => s.title === 'ask_human')).toBe(true);
+    expect(recorder.steps.some((s) => s.title === 'Human answered')).toBe(true);
+  });
+
+  it('finishes CANCELLED if the run is cancelled while awaiting input', async () => {
+    const model = new ScriptedModel([
+      callTool('q1', 'ask_human', '{"question":"Proceed?"}'),
+      say('should never reach here'),
+    ]);
+    const recorder = new FakeRecorder();
+    const askTools = new ToolRunner([...defaultTools(), askHumanTool]);
+    const clarify = async (): Promise<string | null> => null; // simulates abort-while-waiting
+
+    const outcome = await new LoopController({
+      model, tools: askTools, context: new ContextEngine(buildSystemPrompt(CTX, askTools.list())),
+      sandbox, recorder, clarify,
+    }).run();
+
+    expect(outcome.status).toBe(RunStatus.CANCELLED);
+    expect(recorder.transitions.map((t) => t.to)).toEqual([
+      RunStatus.RUNNING,
+      RunStatus.AWAITING_INPUT,
+      RunStatus.CANCELLED,
+    ]);
   });
 });
