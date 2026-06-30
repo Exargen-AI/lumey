@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import {
   CheckCircle2, ChevronLeft, ChevronRight, Clock, Filter, MessageSquare,
   Sparkles, User as UserIcon, Eye, Loader2, Calendar, Activity as ActivityIcon,
-  TrendingUp,
+  TrendingUp, Bot,
 } from 'lucide-react';
 import { useActivityFeed } from '@/hooks/useToday';
 import { useAuthStore } from '@/stores/authStore';
@@ -684,7 +684,16 @@ function ActivityEventRow({
       <div className="min-w-0 flex-1">
         {/* Top line — actor + verb + target */}
         <p className="text-[13px] text-gray-800 dark:text-obsidian-fg leading-snug">
-          <span className="font-semibold">{event.actor?.name ?? 'Someone'}</span>{' '}
+          <span className="font-semibold">{event.actor?.name ?? 'Someone'}</span>
+          {/* Immutable audit attribution — an agent-driven action is flagged. */}
+          {event.actorType === 'AGENT' && (
+            <span
+              className="ml-1 inline-flex items-center gap-0.5 rounded-full bg-violet-100 px-1.5 py-px align-middle text-[10px] font-medium text-violet-700 dark:bg-violet-500/15 dark:text-violet-300"
+              title="Performed by an AI agent"
+            >
+              <Bot size={10} /> agent
+            </span>
+          )}{' '}
           <span className="text-gray-600 dark:text-obsidian-muted">{cfg.verb}</span>{' '}
           {event.task && taskHref ? (
             <Link

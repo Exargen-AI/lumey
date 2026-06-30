@@ -952,6 +952,12 @@ model Activity {
   id         String   @id @default(uuid())
   projectId  String?
   userId     String
+  // Whether a HUMAN or an AGENT performed this action, captured at write time
+  // (P4). This is an IMMUTABLE audit fact — distinct from the actor's *current*
+  // `user.userType` (used for access-masking): it stays correct even if the user
+  // is later retyped or deleted, and is indexed so "every agent-initiated action"
+  // is a cheap compliance query without a join.
+  actorType  UserType @default(HUMAN)
   action     String
   targetType String?
   targetId   String?
@@ -964,6 +970,7 @@ model Activity {
   @@index([projectId])
   @@index([userId])
   @@index([createdAt])
+  @@index([actorType])
   @@map("activities")
 }
 

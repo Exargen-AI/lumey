@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+import { Prisma, UserType } from '@prisma/client';
 import prisma from '../config/database';
 import { logger } from '../lib/logger';
 
@@ -9,15 +9,23 @@ interface LogActivityParams {
   targetType?: string;
   targetId?: string;
   details?: Record<string, unknown>;
+  /**
+   * Who acted — HUMAN or AGENT. Optional: when omitted we derive it from the
+   * actor's current type. Pass it from a known agent path to skip the lookup.
+   * Stored immutably (the audit fact), independent of any later change to — or
+   * deletion of — the user.
+   */
+  actorType?: UserType;
 }
 
 /**
  * Type compatible with both `prisma` and the transaction client passed to
  * `prisma.$transaction(async (tx) => ...)`. Lets callers wrap the activity
  * write in the same transaction as the operation it describes — so we never
- * end up with "task deleted but no audit log" on partial failure.
+ * end up with "task deleted but no audit log" on partial failure. Includes
+ * `user` so we can resolve the actor's type for the audit attribution.
  */
-type ActivityClient = Pick<typeof prisma, 'activity'>;
+type ActivityClient = Pick<typeof prisma, 'activity' | 'user'>;
 
 /**
  * Append an audit-trail entry. Pass a transaction client (`tx`) to write the
@@ -37,9 +45,16 @@ type ActivityClient = Pick<typeof prisma, 'activity'>;
  */
 export async function logActivity(params: LogActivityParams, tx?: ActivityClient): Promise<void> {
   const client = tx ?? prisma;
+  // Capture the actor type at write time (the immutable audit fact). Derive it
+  // from the actor when the caller didn't say; default HUMAN if the user is gone.
+  const actorType =
+    params.actorType ??
+    (await client.user.findUnique({ where: { id: params.userId }, select: { userType: true } }))?.userType ??
+    UserType.HUMAN;
   const data = {
     userId: params.userId,
     projectId: params.projectId,
+    actorType,
     action: params.action,
     targetType: params.targetType,
     targetId: params.targetId,

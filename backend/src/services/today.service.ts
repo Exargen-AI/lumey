@@ -83,6 +83,8 @@ export interface ActivityEvent {
   action: string;
   createdAt: string;
   actor: { id: string; name: string; role: string } | null;
+  /** Immutable audit attribution: who acted, captured when the action happened. */
+  actorType: 'HUMAN' | 'AGENT';
   project: { id: string; name: string; slug: string } | null;
   /** For task-targeted events, the resolved task. Null when the target
    *  isn't a task (or the task is no longer visible to this user). */
@@ -609,6 +611,7 @@ export async function getActivityFeed(
       action: a.action,
       createdAt: a.createdAt.toISOString(),
       actor: a.user,
+      actorType: a.actorType,
       project: a.project,
       task: taskHydrated,
       details: (a.details as Record<string, unknown> | null) ?? null,

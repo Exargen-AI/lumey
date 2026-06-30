@@ -40,6 +40,8 @@ export interface ActivityEvent {
   action: string;
   createdAt: string;
   actor: { id: string; name: string; role: string } | null;
+  /** Immutable audit attribution: who performed the action when it happened. */
+  actorType: 'HUMAN' | 'AGENT';
   project: { id: string; name: string; slug: string } | null;
   task: { id: string; title: string; taskNumber: number } | null;
   details: Record<string, unknown> | null;

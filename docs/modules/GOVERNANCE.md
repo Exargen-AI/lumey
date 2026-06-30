@@ -87,9 +87,20 @@ start gate, the adapter, and the API. `GET /api/v1/agents/:id/policy` (read,
 `user.view`) returns the effective policy; `PUT` (admin, `user.edit`) sets it.
 FE: a "Governed by policy" panel on the run card.
 
+## P4.3 — Activity.actorType (audit attribution)
+
+Every activity-log entry records whether a **HUMAN or an AGENT** performed it,
+captured at write time by `logActivity` (derived from the actor, or passed
+explicitly from a known agent path to skip the lookup). It is the **immutable
+audit fact** — deliberately distinct from the actor's *current* `user.userType`,
+which is used for access-masking: `actorType` stays correct even if the user is
+later retyped or deleted, and is **indexed** so "every agent-initiated action" is
+a cheap compliance query without a join. Existing agent rows were backfilled. The
+activity feed renders a "🤖 agent" badge from this field. Migration `20260628060000`.
+
 ## Not yet built (Phase 4 remainder)
 
-`Activity.actorType` (agent vs human, so the activity feed attributes actions); a
-standalone cumulative `Budget` model with windows (today the ceiling is per-run);
-and receipt **signing with a rotating key** + an external attestation log for
-durable trust.
+A standalone cumulative `Budget` model with windows (today the ceiling is
+per-run); receipt **signing with a rotating key** + an external attestation log
+for durable trust; and a full admin `PolicyPage` editor (today the policy is set
+via `PUT /agents/:id/policy`).

@@ -432,7 +432,7 @@ no model code changes needed for this backlog.
 - [x] `RunStatus += PAUSED` + lifecycle edges (RUNNING↔PAUSED) in `runLifecycle.ts`. ✅ P1.2
 - [x] `RunClarificationRequest` + `RunApprovalRequest` models + `ClarificationStatus`/`ApprovalStatus` enums + migrations. ✅ P2.1/P2.2
 - [x] `RunPullRequest`, `RunCheck`, `RunCommit` models + `PrState`/`CheckStatus`/`CheckConclusion` enums + migration. ✅ P3.1 *(`RunArtifact` still to come.)*
-- [ ] `Activity.actorType` enum column + backfill default `HUMAN`.
+- [x] `Activity.actorType` (UserType) column + index + backfill of agent rows. ✅ P4.3
 - [x] `RunReceipt` model + migration. ✅ P4.1
 - [x] `AgentPolicy` model + migration (allowlist + token/step caps + kill-switch
       + model). ✅ P4.2 *(standalone cumulative `Budget` model still to come.)*
@@ -457,7 +457,7 @@ no model code changes needed for this backlog.
 - [x] `GET /tasks/:id/runs/:runId/sdlc` (commits + PR + checks). ✅ P3.1
 - [x] `GET /tasks/:id/runs/:runId/receipt` — tamper-evident run receipt
       (digest-verified on read). ✅ P4.1
-- [ ] `actorType` written by `activity.service` (resolve from `req.user.userType`).
+- [x] `actorType` captured at write in `logActivity` (immutable audit fact, indexed) + a "agent" badge in the feed. ✅ P4.3
 
 ### Runtime
 - [x] `LoopController` honors a pause check between turns (cooperative, reuses the

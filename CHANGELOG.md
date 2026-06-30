@@ -245,7 +245,19 @@ Module guide: [`docs/modules/GOVERNANCE.md`](docs/modules/GOVERNANCE.md).
   step, allowed tool runs) + orchestrator unit (kill-switch) + **live in the
   browser** (bash blocked; 9 tools · 60k token cap · 18 step cap).
 
+- **P4.3 — Activity.actorType (audit attribution)** ✅ — closes Phase 4: every
+  activity-log entry now records whether a **HUMAN or an AGENT** performed it,
+  captured at write time in `logActivity` (derived from the actor, or passed
+  explicitly from a known agent path). This is the **immutable audit fact** — kept
+  deliberately distinct from the actor's *current* `user.userType` (used for
+  access-masking): it stays correct even if the user is later retyped or deleted,
+  and is **indexed** so "every agent-initiated action" is a cheap compliance
+  query (no join). Backfilled for existing agent rows. The activity feed surfaces
+  it as a "🤖 agent" badge next to the actor. Verified by service units
+  (explicit / derived / default-on-missing / transactional) + **live in the
+  browser** (Lumey Agent · agent · commented on / moved a task).
+
 ## Health (current)
 
-1204 backend tests + 39 SDK tests green · typecheck clean (backend + frontend +
+1208 backend tests + 39 SDK tests green · typecheck clean (backend + frontend +
 sdk) · zero dead exports · green at every commit.
