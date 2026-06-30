@@ -60,6 +60,14 @@ card (self-hides until there's delivery activity):
 It refetches on the run's SSE signal, so a human watches CI go green before they
 merge.
 
+![Delivery pipeline on the run card](images/run-sdlc-receipt.png)
+
+*The run card after the agent committed and opened a PR: the trace (write → test →
+commit → `open_pr`), then the **Delivery pipeline** strip — `2 commits b2c77ad →
+PR #142 (open) → [build ◌ running] [e2e ✗] [lint ✓] [unit tests ✓]`, summarised
+"2 passed · 1 failed · 1 running". (Below it, the governance **Run receipt** —
+documented in [GOVERNANCE.md](GOVERNANCE.md).)*
+
 ## Testing
 
 Service units cover record/assemble + the `check_run` mapping (status/conclusion

@@ -26,6 +26,7 @@ import { RBACPage } from '@/pages/admin/RBACPage';
 import { SystemSettingsPage } from '@/pages/admin/SystemSettingsPage';
 import { StandupViewPage } from '@/pages/admin/StandupViewPage';
 import { ModelsPage } from '@/pages/admin/ModelsPage';
+import { FleetPage } from '@/pages/admin/FleetPage';
 import { InboxPage } from '@/pages/InboxPage';
 
 // PM pages
@@ -111,6 +112,8 @@ export function App() {
           <Route path="/agent-inbox" element={<InboxPage />} />
           {/* Model tiers (local / self-hosted / frontier) + routing. */}
           <Route path="/models" element={<ModelsPage />} />
+          {/* Fleet console — every agent run across the system. */}
+          <Route path="/fleet" element={<FleetPage />} />
           <Route path="/timeline" element={<TimelinePage />} />
           {/* Admin/super-admin "My Tasks" — same component as engineers,
               role-aware navigation built in. Team feedback #3. */}

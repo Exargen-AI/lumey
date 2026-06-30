@@ -57,6 +57,15 @@ with a PR link and check tally), the **digest** (truncated, click-to-copy), and
 when it was issued. Self-hides until a receipt exists; refetches on the run's SSE
 signal.
 
+![Run receipt + policy + pipeline on the run card](images/run-sdlc-receipt.png)
+
+*All three governance/SDLC panels stacked on one run: the **Governed by policy**
+panel (P4.2), the **Delivery pipeline** (P3), and the **Run receipt** —
+`✓ Verified · sha256`, model `qwen2.5-coder:14b`, **23,552 tokens**, **4m 12s**,
+work `5 steps · 2 commits · PR #142 · checks 2✓ 1✗`, and the copyable digest. The
+"Verified" badge is recomputed on read, so tampering with the stored snapshot
+flips it to "Tampered".*
+
 ## Testing
 
 Service units cover snapshot assembly (steps/commits/checks counts, token usage)
@@ -87,6 +96,13 @@ start gate, the adapter, and the API. `GET /api/v1/agents/:id/policy` (read,
 `user.view`) returns the effective policy; `PUT` (admin, `user.edit`) sets it.
 FE: a "Governed by policy" panel on the run card.
 
+![Policy enforcement in the trace](images/run-policy.png)
+
+*Enforcement in action: the agent tried `bash`, which isn't in its allowlist — the
+trace shows **"Blocked by policy: bash"** ("…not in this agent's allowed tools"),
+and the **Governed by policy** panel summarises the limits in force: 9 tools ·
+60,000 token cap · 18 step cap · `qwen2.5-coder:14b`.*
+
 ## P4.3 — Activity.actorType (audit attribution)
 
 Every activity-log entry records whether a **HUMAN or an AGENT** performed it,
@@ -97,6 +113,13 @@ which is used for access-masking: `actorType` stays correct even if the user is
 later retyped or deleted, and is **indexed** so "every agent-initiated action" is
 a cheap compliance query without a join. Existing agent rows were backfilled. The
 activity feed renders a "🤖 agent" badge from this field. Migration `20260628060000`.
+
+![Agent attribution in the activity feed](images/activity-actor-type.png)
+
+*The activity feed attributes each action: "**Lumey Agent · 🤖 agent · commented
+on / moved** Sales analytics dashboard". The violet `agent` chip is rendered from
+the immutable `actorType`, so the audit trail says "this was an agent action" even
+if the user is later changed or removed.*
 
 ## Not yet built (Phase 4 remainder)
 

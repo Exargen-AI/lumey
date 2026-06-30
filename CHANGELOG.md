@@ -277,7 +277,23 @@ Module guide: [`docs/modules/MODEL-ROUTING.md`](docs/modules/MODEL-ROUTING.md).
   redaction) + factory routing units + **live in the browser** (all three tiers
   configured, local default, no key leak).
 
+- **P5.2 — Fleet dashboard** ✅ — finishes Phase 5: the operator's cross-system
+  view of the agent fleet. `fleet.service` aggregates `AgentRun` into a rollup —
+  active/total/24h counts, total tokens, lifecycle distribution by status, and a
+  **per-agent** breakdown (runs · active · failed · tokens) — plus a recent-runs
+  list (task/agent/model/tokens), filterable by status. `GET /fleet/overview` +
+  `/fleet/runs`, scoped server-side (agent-visibility + project membership, like
+  the inbox). FE: a polished **Fleet** admin page (stat cards, lifecycle strip,
+  agents table, runs table) that polls to stay roughly live. Verified by service
+  units (visibility gate, project scoping, aggregation math) + **live in the
+  browser** (14 runs · 12 active · 2 failed · 39,401 tokens).
+- **Docs: screenshots are now committed assets, not prose.** Added a reproducible
+  Playwright capture script (`docs/scripts/capture-screenshots.mjs`) that drives
+  the running app and saves real PNGs into `docs/modules/images/`, embedded with
+  detailed captions across the module guides (Fleet, Models, SDLC, Governance,
+  HITL). Re-runnable whenever the UI changes — the docs show the actual product.
+
 ## Health (current)
 
-1219 backend tests + 39 SDK tests green · typecheck clean (backend + frontend +
+1225 backend tests + 39 SDK tests green · typecheck clean (backend + frontend +
 sdk) · zero dead exports · green at every commit.

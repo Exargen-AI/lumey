@@ -49,6 +49,15 @@ endpoint, a configured/not-configured badge, a "key" chip for key-gated tiers, a
 a "default" star on the routed-by-default tier — the sovereign strategy at a
 glance.
 
+![Models page](images/models.png)
+
+*All three tiers configured here: **Local (Ollama)** serving `qwen2.5-coder:14b`,
+**Self-hosted OSS (vLLM/TGI)** serving `mixtral-8x7b-instruct`, and **Frontier API**
+serving `glm-4.6` (marked ⭐ default · 🔑 key). The endpoints are shown
+credential-stripped; the API key is never sent to the client. This is exactly the
+"connect any OpenAI-compatible model" story — e.g. GLM‑4.6 drops into the frontier
+(or self-hosted) tier with no code change.*
+
 ## Testing
 
 Pure-function units cover the whole router: all-three-on-empty-env, configured +

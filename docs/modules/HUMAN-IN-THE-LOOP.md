@@ -63,6 +63,12 @@ it as the tool result and resumes. The human answers over `POST
 …/clarifications/:id/answer`, which wakes the loop **first** then persists
 ANSWERED (a raced/dead run is rejected before being marked answered).
 
+![Clarification on the run card](images/run-clarification.png)
+
+*The run parked on a question: the trace shows the agent's `ask_human` step, and
+the amber **"Agent needs your input"** card carries the question (date‑fns vs dayjs)
+with an inline answer box — sending the answer resumes the run live.*
+
 ## P2.2 — Approval gate (human checkpoint before a risky action)
 
 Before a high-risk tool call (default: `open_pr`, configurable via
@@ -72,6 +78,13 @@ AWAITING_INPUT. **Approve** → the action runs; **reject** → it is refused wi
 path). `POST …/approvals/:id/{approve,reject}` wakes the loop then persists the
 decision. The gate lives in the `LoopController`'s per-call execution (`runTools`),
 so any tool can be gated, not just PRs.
+
+![Approval gate on the run card](images/run-approval.png)
+
+*The run parked on an `open_pr` checkpoint: the violet **"Approval needed"** card
+shows what the agent wants to do ("open_pr: Add CSV export to the sales report"), a
+reason field, and **Approve / Reject** — approve lets the PR open, reject refuses it
+and feeds the reason back to the agent.*
 
 ## P2.3 — HITL Inbox (cross-task view)
 
