@@ -222,6 +222,10 @@
   `runExecutor`); plan it here, ship the read/console first.
 
 ### Phase 6 — Enterprise Packaging
+- **Status:** ⏳ in progress — ✅ **P6.1 README rewrite + env docs**, ✅ **P6.2
+  audit export** (scoped CSV of the activity log + a Fleet export button).
+  *Remaining:* **SBOM + dependency scan** in CI, a **security-posture doc**, and
+  (optional) richer audit export (receipts/NDJSON).
 - **Goal:** make it buyable.
 - **Backend/devex:** **audit export** (NDJSON of Activity+receipts), **SBOM +
   dependency scan** in CI (extend `ci.yml`; gitleaks already there), security

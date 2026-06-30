@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Radio, Bot, Coins, Activity as ActivityIcon, ArrowRight } from 'lucide-react';
+import { Radio, Bot, Coins, Activity as ActivityIcon, ArrowRight, Download } from 'lucide-react';
 import { useFleetOverview, useFleetRuns } from '@/hooks/useFleet';
+import { downloadAuditCsv } from '@/api/audit';
+import { Button } from '@/components/ui';
 import type { RunStatus } from '@/api/agentRuns';
 import { formatRelative } from '@/lib/formatters';
 import { cn } from '@/lib/cn';
@@ -23,12 +25,23 @@ export function FleetPage() {
   const { data: overview, isLoading } = useFleetOverview();
   const [statusFilter, setStatusFilter] = useState<RunStatus | ''>('');
   const { data: runs } = useFleetRuns(statusFilter || undefined);
+  const [exporting, setExporting] = useState(false);
+
+  const exportAudit = async () => {
+    setExporting(true);
+    try { await downloadAuditCsv(); } finally { setExporting(false); }
+  };
 
   return (
     <div className="mx-auto w-full max-w-4xl px-4 py-6">
-      <header className="mb-1 flex items-center gap-2">
-        <Radio size={20} className="text-violet-500" />
-        <h1 className="text-xl font-semibold text-gray-900 dark:text-obsidian-fg">Fleet</h1>
+      <header className="mb-1 flex items-center justify-between gap-2">
+        <span className="flex items-center gap-2">
+          <Radio size={20} className="text-violet-500" />
+          <h1 className="text-xl font-semibold text-gray-900 dark:text-obsidian-fg">Fleet</h1>
+        </span>
+        <Button variant="secondary" size="xs" leadingIcon={<Download size={12} />} loading={exporting} onClick={exportAudit}>
+          Export audit log
+        </Button>
       </header>
       <p className="mb-5 text-[13px] text-gray-500 dark:text-obsidian-muted">
         Every agent run across the system — what's in flight, how it's distributed, and which agents are doing the work.

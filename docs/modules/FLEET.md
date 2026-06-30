@@ -48,6 +48,10 @@ everyone else is scoped to their project memberships. Enforced server‑side in
 Built from `AgentRun` with a few `groupBy` aggregations — no new tables. The
 overview polls (10s) so the console stays roughly live without a dedicated stream.
 
+The Fleet header also hosts **Export audit log** → `GET /audit/export` (P6.2): a
+scoped, date-windowed CSV of the activity log (with the immutable `actorType`),
+for compliance. See [GOVERNANCE.md](GOVERNANCE.md).
+
 ## Testing
 
 Service units cover the visibility gate (no‑agents → empty, no‑memberships →

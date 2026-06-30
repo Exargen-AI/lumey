@@ -293,7 +293,26 @@ Module guide: [`docs/modules/MODEL-ROUTING.md`](docs/modules/MODEL-ROUTING.md).
   detailed captions across the module guides (Fleet, Models, SDLC, Governance,
   HITL). Re-runnable whenever the UI changes — the docs show the actual product.
 
+## Enterprise hardening — Phase 6 (Packaging)
+
+- **P6.1 — README rewrite + env docs** ✅ — the README still described the old v1 PM
+  tool (kanban + leave + CMS), underselling the agentic product. Rewritten as
+  Lumey's front door: the pitch, the three differentiators, an illustrated
+  capability tour linking the module guides, a corrected quick start, and a
+  "connect your models" example (incl. GLM-4.6 via z.ai). All 23 links verified.
+  The agent-runtime env (3 model tiers, approval gate, receipt signing, GitHub) is
+  now documented in `backend/.env.example`.
+- **P6.2 — Audit export** ✅ — a downloadable, compliance-grade export of the
+  activity log. `audit.service` reads the log (with the immutable `actorType`,
+  P4.3) into a flat, **scoped** (admin → project membership), **date-windowed**
+  table and serializes RFC-4180 CSV — with **spreadsheet formula-injection
+  neutralized** (`=+-@`-leading fields are quote-prefixed). The agent-visibility
+  directive holds even here: a viewer who can't see agents gets no agent rows.
+  `GET /audit/export?format=csv|json` (admin) downloads as a file; an **Export
+  audit log** button sits on the Fleet console. Verified by service units (scoping,
+  agent masking, CSV quoting + injection) + **live** (CSV with `actorType` columns).
+
 ## Health (current)
 
-1225 backend tests + 39 SDK tests green · typecheck clean (backend + frontend +
+1230 backend tests + 39 SDK tests green · typecheck clean (backend + frontend +
 sdk) · zero dead exports · green at every commit.

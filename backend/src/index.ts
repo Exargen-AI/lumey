@@ -27,6 +27,7 @@ import projectAckRoutes from './routes/projectAcknowledgment.routes';
 import deliverableRoutes from './routes/deliverable.routes';
 import projectDocumentRoutes from './routes/projectDocument.routes';
 import statusUpdateRoutes from './routes/statusUpdate.routes';
+import auditRoutes from './routes/audit.routes';
 import userRoutes from './routes/user.routes';
 import activityRoutes from './routes/activity.routes';
 import analyticsRoutes from './routes/analytics.routes';
@@ -227,6 +228,7 @@ app.use('/api/v1', currentSprintRoutes);
 // "Done today" daily-wrap-up endpoint — role-aware visibility computed
 // inside the service.
 app.use('/api/v1', todayRoutes);
+app.use('/api/v1', auditRoutes);
 
 // Error handler (must be last)
 app.use(errorHandler);
