@@ -257,7 +257,27 @@ Module guide: [`docs/modules/GOVERNANCE.md`](docs/modules/GOVERNANCE.md).
   (explicit / derived / default-on-missing / transactional) + **live in the
   browser** (Lumey Agent · agent · commented on / moved a task).
 
+## Enterprise hardening — Phase 5 (Fleet & model routing)
+
+Module guide: [`docs/modules/MODEL-ROUTING.md`](docs/modules/MODEL-ROUTING.md).
+
+- **P5.1 — 3-option model router** ✅ — the sovereign, local-first model strategy
+  made first-class, all behind the one `ModelClient` seam. A provider registry
+  reads the deployment env into three tiers — **LOCAL** (Ollama/llama.cpp, air-gap,
+  zero cost, the default direction) → **SELF_HOSTED** (OSS on vLLM/TGI) →
+  **FRONTIER** (a controlled, opt-in gateway, API-key-gated) — and routes each run:
+  an agent's **policy model** (`AgentPolicy.model`, P4.2) wins if its tier is
+  configured, else the default tier, else the first configured in priority order
+  (sovereign first, frontier last). Pure, tested selection; the native adapter now
+  builds its model via `modelClientForContext({ preferredModel })`. `GET
+  /models/providers` returns **redacted** descriptors (status + which is default,
+  never a key or credentialed URL). FE: a polished **Models** admin page (the three
+  tiers, configured/default badges, model + endpoint). Verified by provider/router
+  units (priority order, backend-hint fallback, preferred-model match, credential
+  redaction) + factory routing units + **live in the browser** (all three tiers
+  configured, local default, no key leak).
+
 ## Health (current)
 
-1208 backend tests + 39 SDK tests green · typecheck clean (backend + frontend +
+1219 backend tests + 39 SDK tests green · typecheck clean (backend + frontend +
 sdk) · zero dead exports · green at every commit.

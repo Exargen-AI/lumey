@@ -191,6 +191,12 @@
 - **Done:** an over-budget run halts with a breaker event + a receipt.
 
 ### Phase 5 — Fleet & Model Routing (3 options)
+- **Status:** ✅ **P5.1 model router done** — provider registry + `selectProvider`
+  (preferred → default → first-configured, sovereign-first) +
+  `modelClientForContext`; `GET /models/providers` (redacted) + a **Models** admin
+  page. The native adapter routes by `AgentPolicy.model`. *Remaining:* the **Fleet
+  dashboard** (live runs / queue / per-agent rollups), per-project route config, and
+  health-probed automatic fallback. Guide: `docs/modules/MODEL-ROUTING.md`.
 - **Goal:** operate many runs/agents; route across local → self-hosted → frontier.
 - **Why:** scale + the sovereign-model differentiator, productized.
 - **User outcome:** a **Fleet dashboard**; per-project model strategy with a

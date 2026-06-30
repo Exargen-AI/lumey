@@ -157,6 +157,8 @@ export const SIDEBAR_NAV = {
     // HITL agent inbox — runs waiting on a human (questions + approvals). Empty
     // for viewers who can't see agents, so it's harmless to show broadly.
     { label: 'Agent Inbox', path: '/agent-inbox', icon: 'Bot' },
+    // Model tiers + routing (local / self-hosted / frontier).
+    { label: 'Models', path: '/models', icon: 'Cpu', permission: 'analytics.view_portfolio' },
     // Admins/super-admins also get assigned tasks (PR triage tasks etc.) and
     // need a place to find them. Team feedback #3.
     { label: 'My Tasks', path: '/my-tasks', icon: 'CheckSquare' },

@@ -12,6 +12,7 @@
  */
 import { HttpModelClient, type HttpModelClientConfig } from './httpModelClient';
 import type { ModelClient } from './types';
+import { listModelProviders, selectProvider, type ModelProvider } from './modelProviders';
 
 const DEFAULT_LOCAL_BASE_URL = 'http://localhost:11434/v1'; // Ollama's OpenAI-compatible endpoint
 
@@ -53,21 +54,51 @@ function timeoutFromEnv(env: NodeJS.ProcessEnv, fallbackMs: number): number {
   return Number.isFinite(v) && v > 0 ? v : fallbackMs;
 }
 
-export function modelClientFromEnv(env: NodeJS.ProcessEnv = process.env): ModelClient {
-  const backend = (env.LUMEY_MODEL_BACKEND ?? 'local').toLowerCase();
-  if (backend === 'frontier') {
-    const { LUMEY_FRONTIER_URL: baseUrl, LUMEY_FRONTIER_MODEL: model, LUMEY_FRONTIER_API_KEY: apiKey } = env;
-    if (!baseUrl || !model || !apiKey) {
-      throw new Error('native runtime: frontier model not configured (set LUMEY_FRONTIER_URL, LUMEY_FRONTIER_MODEL, LUMEY_FRONTIER_API_KEY)');
+/** Build the concrete client for a chosen provider (reads its secrets from env). */
+function buildClientForProvider(provider: ModelProvider, env: NodeJS.ProcessEnv): ModelClient {
+  const model = provider.model;
+  if (!model) throw new Error(`native runtime: provider ${provider.id} has no model configured`);
+  switch (provider.kind) {
+    case 'FRONTIER': {
+      const baseUrl = env.LUMEY_FRONTIER_URL;
+      const apiKey = env.LUMEY_FRONTIER_API_KEY;
+      if (!baseUrl || !apiKey) throw new Error('native runtime: frontier model not fully configured (LUMEY_FRONTIER_URL, LUMEY_FRONTIER_API_KEY)');
+      // Frontier APIs are fast but a cold/long generation still warrants headroom.
+      return createFrontierModelClient({ baseUrl, model, apiKey, timeoutMs: timeoutFromEnv(env, 120_000) });
     }
-    // Frontier APIs are fast but a cold/long generation still warrants headroom.
-    return createFrontierModelClient({ baseUrl, model, apiKey, timeoutMs: timeoutFromEnv(env, 120_000) });
+    case 'SELF_HOSTED': {
+      const baseUrl = env.LUMEY_SELFHOSTED_URL;
+      if (!baseUrl) throw new Error('native runtime: self-hosted model not configured (LUMEY_SELFHOSTED_URL)');
+      // OpenAI-compatible; optional bearer key. Self-hosted GPUs are quicker than
+      // a laptop but slower than frontier — a middle-ground deadline.
+      return new HttpModelClient({ baseUrl, model, apiKey: env.LUMEY_SELFHOSTED_API_KEY, timeoutMs: timeoutFromEnv(env, 200_000) });
+    }
+    default: {
+      // Local models on consumer hardware are slow — a cold load alone can take
+      // ~30s, and an agentic generation longer — so default to a generous deadline.
+      return createLocalModelClient({ model, baseUrl: env.LUMEY_LOCAL_MODEL_URL, timeoutMs: timeoutFromEnv(env, 300_000) });
+    }
   }
-  const model = env.LUMEY_LOCAL_MODEL;
-  if (!model) {
-    throw new Error('native runtime: no model configured (set LUMEY_LOCAL_MODEL, or LUMEY_MODEL_BACKEND=frontier with LUMEY_FRONTIER_*)');
+}
+
+/**
+ * Resolve a ModelClient for a run via the provider router: an agent's preferred
+ * model (from policy) wins if its tier is configured, else the default tier, else
+ * the first configured one (local → self-hosted → frontier). Throws loudly (not
+ * at request time) when nothing is configured.
+ */
+export function modelClientForContext(
+  ctx: { preferredModel?: string | null } = {},
+  env: NodeJS.ProcessEnv = process.env,
+): ModelClient {
+  const provider = selectProvider(listModelProviders(env), ctx.preferredModel);
+  if (!provider) {
+    throw new Error('native runtime: no model provider configured (set LUMEY_LOCAL_MODEL, LUMEY_SELFHOSTED_*, or LUMEY_FRONTIER_*)');
   }
-  // Local models on consumer hardware are slow — a cold load alone can take ~30s,
-  // and an agentic generation longer — so default to a generous deadline.
-  return createLocalModelClient({ model, baseUrl: env.LUMEY_LOCAL_MODEL_URL, timeoutMs: timeoutFromEnv(env, 300_000) });
+  return buildClientForProvider(provider, env);
+}
+
+/** Back-compat entry point: route with no per-agent preference. */
+export function modelClientFromEnv(env: NodeJS.ProcessEnv = process.env): ModelClient {
+  return modelClientForContext({}, env);
 }

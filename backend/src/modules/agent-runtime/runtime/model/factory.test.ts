@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createLocalModelClient, createFrontierModelClient, modelClientFromEnv } from './factory';
+import { createLocalModelClient, createFrontierModelClient, modelClientFromEnv, modelClientForContext } from './factory';
 
 function captureFetch() {
   const calls: Array<{ url: string; init: RequestInit }> = [];
@@ -50,8 +50,8 @@ describe('modelClientFromEnv', () => {
     expect(modelClientFromEnv({ LUMEY_LOCAL_MODEL: 'llama3.1' } as NodeJS.ProcessEnv).model).toBe('llama3.1');
   });
 
-  it('throws when local is selected but unconfigured', () => {
-    expect(() => modelClientFromEnv({} as NodeJS.ProcessEnv)).toThrow(/no model configured/);
+  it('throws when no provider is configured at all', () => {
+    expect(() => modelClientFromEnv({} as NodeJS.ProcessEnv)).toThrow(/no model provider configured/);
   });
 
   it('builds a frontier client when selected and fully configured', () => {
@@ -64,7 +64,25 @@ describe('modelClientFromEnv', () => {
     expect(c.model).toBe('big');
   });
 
-  it('throws when frontier is selected but missing keys', () => {
-    expect(() => modelClientFromEnv({ LUMEY_MODEL_BACKEND: 'frontier' } as NodeJS.ProcessEnv)).toThrow(/frontier model not configured/);
+  it('falls back to a configured tier when the backend hint is unconfigured', () => {
+    // backend hints frontier but only local is set — the router uses local.
+    const c = modelClientFromEnv({ LUMEY_MODEL_BACKEND: 'frontier', LUMEY_LOCAL_MODEL: 'qwen' } as NodeJS.ProcessEnv);
+    expect(c.model).toBe('qwen');
+  });
+});
+
+describe('modelClientForContext (per-agent routing)', () => {
+  const env = {
+    LUMEY_LOCAL_MODEL: 'qwen',
+    LUMEY_SELFHOSTED_MODEL: 'mixtral',
+    LUMEY_SELFHOSTED_URL: 'https://gpu/v1',
+  } as NodeJS.ProcessEnv;
+
+  it("routes to the tier serving the agent's preferred model", () => {
+    expect(modelClientForContext({ preferredModel: 'mixtral' }, env).model).toBe('mixtral');
+  });
+
+  it('falls back to the default tier when the preference is unknown', () => {
+    expect(modelClientForContext({ preferredModel: 'nope' }, env).model).toBe('qwen');
   });
 });

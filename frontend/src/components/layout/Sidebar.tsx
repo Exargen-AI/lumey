@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, FolderKanban, GanttChart, Users, BarChart3, UserCog, Shield, ShieldCheck, Settings, CheckSquare, Clock, Activity, ClipboardCheck, LogOut, ChevronLeft, ChevronRight, Globe, Inbox, Plane, CalendarClock, Sun, Sunrise, Waves, UsersRound, BookOpen, Bot } from 'lucide-react';
+import { LayoutDashboard, FolderKanban, GanttChart, Users, BarChart3, UserCog, Shield, ShieldCheck, Settings, CheckSquare, Clock, Activity, ClipboardCheck, LogOut, ChevronLeft, ChevronRight, Globe, Inbox, Plane, CalendarClock, Sun, Sunrise, Waves, UsersRound, BookOpen, Bot, Cpu } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { useUIStore } from '@/stores/uiStore';
 import { cn } from '@/lib/cn';
@@ -9,7 +9,7 @@ import { ROLE_LABELS } from '@exargen/shared';
 import { UserRole } from '@exargen/shared';
 
 const iconMap: Record<string, React.ComponentType<any>> = {
-  LayoutDashboard, FolderKanban, GanttChart, Users, BarChart3, UserCog, Shield, ShieldCheck, Settings, CheckSquare, Clock, Activity, ClipboardCheck, Globe, Inbox, Plane, CalendarClock, Sun, Sunrise, Waves, UsersRound, BookOpen, Bot,
+  LayoutDashboard, FolderKanban, GanttChart, Users, BarChart3, UserCog, Shield, ShieldCheck, Settings, CheckSquare, Clock, Activity, ClipboardCheck, Globe, Inbox, Plane, CalendarClock, Sun, Sunrise, Waves, UsersRound, BookOpen, Bot, Cpu,
 };
 
 export function Sidebar() {

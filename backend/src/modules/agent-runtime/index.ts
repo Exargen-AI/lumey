@@ -7,6 +7,7 @@
 import { RunStatus } from '@prisma/client';
 import runRoutes from './agentRun.routes';
 import inboxRoutes from './inbox.routes';
+import modelRoutes from './models.routes';
 import type { RunTransitionedEvent } from './events';
 import { isTerminal } from '../../lib/runLifecycle';
 import { issueRunReceipt } from '../../services/runReceipt.service';
@@ -19,6 +20,7 @@ export const agentRuntimeModule: ModuleManifest = {
   routes: [
     { path: '/api/v1', router: runRoutes },
     { path: '/api/v1', router: inboxRoutes },
+    { path: '/api/v1', router: modelRoutes },
   ],
   init: (ctx) => {
     // Governance: issue/refresh the run receipt whenever a run comes to rest —

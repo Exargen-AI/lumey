@@ -47,7 +47,7 @@ import { resolveEffectivePolicy } from '../../../services/agentPolicy.service';
 import { resolveRunRepoConfig } from '../../../services/runRepoConfig.service';
 import { recallMemories, recordMemory, projectIdForTask } from '../../../services/agentMemory.service';
 import { ensureRepoClone } from '../runtime/workspace/repoWorkspace';
-import { modelClientFromEnv } from '../runtime/model/factory';
+import { modelClientForContext } from '../runtime/model/factory';
 import { embeddingClientFromEnv, type EmbeddingClient } from '../runtime/model/embeddingClient';
 import type { ModelClient, ChatMessage } from '../runtime/model/types';
 import type { Sandbox } from '../runtime/sandbox/sandbox';
@@ -55,7 +55,7 @@ import { WorktreeSandbox } from '../runtime/sandbox/worktreeSandbox';
 
 export interface NativeAdapterDeps {
   /** Resolve the model for a run. Throws if no model is configured. */
-  readonly modelFactory: () => ModelClient;
+  readonly modelFactory: (ctx?: { preferredModel?: string | null }) => ModelClient;
   /** Provide the workspace for a run. Default: a fresh owned temp dir. */
   readonly sandboxFactory?: (ctx: RunContext) => Promise<Sandbox>;
   /** Provide the toolset. Default: the six built-in coding tools. */
@@ -336,10 +336,12 @@ export function createNativeAdapter(deps: NativeAdapterDeps): RuntimeAdapter {
       approvalGates.set(ctx.runId, approvalGate);
       let sandbox: Sandbox | undefined;
       try {
-        const model = deps.modelFactory(); // throws if no model configured
         const projectId = await projectIdForTask(ctx.taskId);
-        // Governance: the agent's effective policy gates its toolset + budget.
+        // Governance: the agent's effective policy gates its toolset + budget,
+        // and its preferred model drives the provider router (local → self-hosted
+        // → frontier).
         const policy = await resolveEffectivePolicy(ctx.agentId);
+        const model = deps.modelFactory({ preferredModel: policy.model }); // throws if no provider configured
         sandbox = await (deps.sandboxFactory ?? repoAwareSandbox)(ctx);
         const tools = deps.toolsFactory ? deps.toolsFactory() : await defaultRunTools(ctx, sandbox, model, policy.allowedTools);
         const queryText = [ctx.task.title, ctx.task.description ?? ''].join('\n').trim();
@@ -450,4 +452,6 @@ async function failRun(runId: string, error: unknown): Promise<void> {
 }
 
 /** The default native adapter: model from env, fresh temp-dir workspace per run. */
-export const nativeAdapter: RuntimeAdapter = createNativeAdapter({ modelFactory: modelClientFromEnv });
+export const nativeAdapter: RuntimeAdapter = createNativeAdapter({
+  modelFactory: (routeCtx) => modelClientForContext(routeCtx),
+});
