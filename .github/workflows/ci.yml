@@ -106,6 +106,34 @@ jobs:
       - run: npm ci
       - run: npm run audit:strict
 
+  # ─── SBOM (CycloneDX) ──────────────────────────────────────────────────
+  # Phase 6 (enterprise packaging): generate a Software Bill of Materials in
+  # the CycloneDX standard from the npm lockfile (all workspaces) and publish
+  # it as a build artifact. Enterprises ask for an SBOM as a supply-chain trust
+  # artifact — it lists every transitive dependency + version so a security
+  # team can cross-reference advisories. Generation must succeed (a broken
+  # lockfile fails here); we don't gate on SBOM *contents* — `npm audit`
+  # (above) + gitleaks own the policy gate.
+  sbom:
+    name: SBOM (CycloneDX)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - name: Generate CycloneDX SBOM
+        run: npx --yes @cyclonedx/cyclonedx-npm@^1 --output-format JSON --output-file sbom.cdx.json
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-cyclonedx
+          path: sbom.cdx.json
+          retention-days: 90
+
   # ─── Typecheck ─────────────────────────────────────────────────────────
   typecheck:
     name: Typecheck (both packages)

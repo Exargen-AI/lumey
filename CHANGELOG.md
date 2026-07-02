@@ -311,6 +311,17 @@ Module guide: [`docs/modules/MODEL-ROUTING.md`](docs/modules/MODEL-ROUTING.md).
   `GET /audit/export?format=csv|json` (admin) downloads as a file; an **Export
   audit log** button sits on the Fleet console. Verified by service units (scoping,
   agent masking, CSV quoting + injection) + **live** (CSV with `actorType` columns).
+- **P6.3 — SBOM in CI** ✅ — a **CycloneDX** Software Bill of Materials is generated
+  from the npm lockfile (all workspaces) on every PR and published as a build
+  artifact — the supply-chain trust artifact enterprises ask for (dependency
+  scanning via `npm audit` + gitleaks was already in CI). Verified locally
+  (CycloneDX 1.4, ~1000 components, valid JSON).
+- **P6.4 — SECURITY.md** ✅ — a single security-posture doc: responsible-disclosure
+  process + the full model (authn/authz, the agent sandbox, governance least-
+  privilege + HITL, tamper-evident receipts + immutable audit attribution + the
+  agent-visibility allowlist, HMAC-verified webhooks + GitHub App tokens, redacted
+  model providers, secrets/logging, and the CI security gates). Linked from the
+  README. **Phase 6 complete — the enterprise plan's six phases are done.**
 
 ## Health (current)
 

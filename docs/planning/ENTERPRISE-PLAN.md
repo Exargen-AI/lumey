@@ -222,10 +222,13 @@
   `runExecutor`); plan it here, ship the read/console first.
 
 ### Phase 6 — Enterprise Packaging
-- **Status:** ⏳ in progress — ✅ **P6.1 README rewrite + env docs**, ✅ **P6.2
-  audit export** (scoped CSV of the activity log + a Fleet export button).
-  *Remaining:* **SBOM + dependency scan** in CI, a **security-posture doc**, and
-  (optional) richer audit export (receipts/NDJSON).
+- **Status:** ✅ **DONE** — P6.1 README rewrite + `.env.example` model/runtime docs ·
+  P6.2 audit export (scoped CSV + Fleet button) · P6.3 CycloneDX SBOM in CI
+  (dependency scan via `npm audit` + gitleaks already present) · P6.4 `SECURITY.md`
+  (security-posture + responsible disclosure). **All six phases of this plan are
+  complete.** Optional stretch left: richer audit export (receipts/NDJSON),
+  per-project model-route config, health-probed auto-fallback, and — for true fleet
+  scale — a durable job queue to replace in-process `runExecutor`.
 - **Goal:** make it buyable.
 - **Backend/devex:** **audit export** (NDJSON of Activity+receipts), **SBOM +
   dependency scan** in CI (extend `ci.yml`; gitleaks already there), security

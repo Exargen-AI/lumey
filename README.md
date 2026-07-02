@@ -168,7 +168,9 @@ revocation · brute-force lockout · helmet/HSTS/CSP/CORS · rate limiting · gi
 in CI · HMAC-verified GitHub webhooks · GitHub App short-lived tokens · path-
 contained, shell-free sandboxed tool execution · least-privilege agent policies ·
 tamper-evident run receipts · immutable agent/human audit attribution. The agent
-visibility allowlist keeps agent work out of unauthorised views, server-side.
+visibility allowlist keeps agent work out of unauthorised views, server-side. CI
+gates every PR with gitleaks, `npm audit`, and a CycloneDX SBOM. The full model +
+disclosure policy is in [`SECURITY.md`](SECURITY.md).
 
 Deploying? See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) (Railway + Vercel) and the
 admin runbook [`docs/ADMIN_PLAYBOOK.md`](docs/ADMIN_PLAYBOOK.md).
